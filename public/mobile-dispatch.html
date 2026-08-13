@@ -105,7 +105,7 @@
     </main>
     <footer class="sticky bottom-0 z-50 bg-slate-950 border-t border-slate-800 p-4">
       <div class="max-w-md mx-auto">
-        <button id="resolveBtn" type="button" disabled onclick="resolveTicket()" class="touch-manipulation w-full rounded-xl bg-emerald-600 px-4 py-4 text-base font-bold text-white shadow-lg active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">RESOLVE & CLOSE TICKET</button>
+        <button id="resolveBtn" type="button" disabled onclick="resolveTicket(event)" class="touch-manipulation w-full rounded-xl bg-emerald-600 px-4 py-4 text-base font-bold text-white shadow-lg active:bg-emerald-700 transition">RESOLVE & CLOSE TICKET</button>
       </div>
     </footer>
   </div>
@@ -435,6 +435,7 @@
       const file = input.files && input.files[0];
       if (!file) return;
       const labelId = type === 'before' ? 'beforeLabel' : 'afterLabel';
+      console.log(`[PHOTO] Starting compression for ${type}`, file.name, file.size);
       document.getElementById(labelId).textContent = '⏳ Compressing...';
       try {
         const compressed = await compressImageFile(file);
@@ -442,15 +443,21 @@
         if (type === 'before') { beforePhotoName = blobName; beforePhotoBlob = compressed; }
         else { afterPhotoName = blobName; afterPhotoBlob = compressed; }
         document.getElementById(labelId).textContent = `📷 ${blobName} (${(compressed.size / 1024).toFixed(1)} KB)`;
+        console.log(`[PHOTO] Compression done for ${type}: ${compressed.size} bytes`);
       } catch (err) {
         document.getElementById(labelId).textContent = '❌ Compression failed';
         console.error('[PHOTO] Compression failed:', err);
+        window.alert('Photo compression failed: ' + err.message);
       }
     }
 
     function compressImageFile(file, maxDimension = 1280, quality = 0.7) {
       return new Promise((resolve, reject) => {
-        if (!file || !file.type.startsWith('image/')) return resolve(file);
+        if (!file || !file.type.startsWith('image/')) {
+          console.log('[PHOTO] File not an image, passing through');
+          return resolve(file);
+        }
+        console.log('[PHOTO] Drawing to canvas', { maxDimension, quality });
         const img = new Image();
         const objectUrl = URL.createObjectURL(file);
         img.onload = () => {
@@ -477,6 +484,7 @@
           canvas.toBlob((blob) => {
             if (!blob) return reject(new Error('Canvas toBlob returned null'));
             const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg', lastModified: Date.now() });
+            console.log('[PHOTO] Canvas toBlob produced', compressed.size, 'bytes');
             resolve(compressed);
           }, 'image/jpeg', quality);
         };
@@ -485,8 +493,12 @@
       });
     }
 
-    async function resolveTicket() {
-      if (!currentTicketId) return;
+    async function resolveTicket(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (!currentTicketId) {
+        window.alert('No active ticket selected.');
+        return;
+      }
       const flowRestored = document.getElementById('flowRestored')?.checked;
       if (!flowRestored) {
         window.alert('Please confirm culvert flow has been restored.');
@@ -500,11 +512,12 @@
         window.alert('Please capture and compress BEFORE and AFTER photos.');
         return;
       }
+      console.log('[RESOLVE] Sending request for ticket', currentTicketId, 'with blobs', beforePhotoBlob.size, afterPhotoBlob.size);
       try {
         resolveBtn.disabled = true;
         const formData = new FormData();
-        formData.append('beforePhoto', beforePhotoBlob);
-        formData.append('afterPhoto', afterPhotoBlob);
+        formData.append('beforePhoto', beforePhotoBlob, beforePhotoName || 'before.jpg');
+        formData.append('afterPhoto', afterPhotoBlob, afterPhotoName || 'after.jpg');
         formData.append('resolutionNotes', 'Resolved via mobile field app');
         formData.append('memberId', selectedMemberId);
         formData.append('memberName', selectedMemberName || '');
@@ -513,6 +526,7 @@
           body: formData
         });
         const data = await res.json();
+        console.log('[RESOLVE] Server response', res.status, data);
         if (res.ok && data.success) {
           window.alert(`Ticket ${data.ticket.ticketId} marked resolved by ${data.ticket.actionAudit?.resolvedByMemberName || 'operator'}.`);
           showStandby();
@@ -521,9 +535,9 @@
           window.alert(data.error || 'Failed to resolve ticket');
           resolveBtn.disabled = false;
         }
-      } catch (e) {
-        console.error('[MOBILE] Resolve failed', e);
-        window.alert('Failed to resolve ticket');
+      } catch (err) {
+        console.error('[MOBILE] Resolve failed', err);
+        window.alert(err.message || 'Network request failed. Check your connection and try again.');
         resolveBtn.disabled = false;
       }
     }
