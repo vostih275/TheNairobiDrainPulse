@@ -185,6 +185,8 @@
     let currentTicketId = null;
     let beforePhotoName = null;
     let afterPhotoName = null;
+    let beforePhotoBlob = null;
+    let afterPhotoBlob = null;
     let selectedMemberId = null;
     let selectedMemberName = null;
     let queuedTicket = null;
@@ -402,11 +404,11 @@
           <h3 class="text-sm font-semibold text-slate-300 mb-3">Remediation Workflow</h3>
           <div class="space-y-3">
             <label class="touch-manipulation block w-full rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-semibold text-white shadow-md active:bg-blue-700 cursor-pointer text-center">
-              <input id="beforePhotoInput" type="file" capture="camera" accept="image/*" class="hidden" onchange="onPhotoSelected('before', this)">
+              <input id="beforePhotoInput" type="file" capture="environment" accept="image/*" class="hidden" onchange="onPhotoSelected('before', this)">
               <span id="beforeLabel">📷 Capture BEFORE Photo</span>
             </label>
             <label class="touch-manipulation block w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3.5 text-sm font-medium text-slate-200 shadow-sm active:bg-slate-700 cursor-pointer text-center">
-              <input id="afterPhotoInput" type="file" capture="camera" accept="image/*" class="hidden" onchange="onPhotoSelected('after', this)">
+              <input id="afterPhotoInput" type="file" capture="environment" accept="image/*" class="hidden" onchange="onPhotoSelected('after', this)">
               <span id="afterLabel">📷 Capture AFTER Photo</span>
             </label>
             <label class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
@@ -429,16 +431,24 @@
       resolveBtn.disabled = !selectedMemberId;
     }
 
-    function onPhotoSelected(type, input) {
+    async function onPhotoSelected(type, input) {
       const file = input.files && input.files[0];
       if (!file) return;
       const labelId = type === 'before' ? 'beforeLabel' : 'afterLabel';
-      if (type === 'before') beforePhotoName = file.name;
-      else afterPhotoName = file.name;
-      document.getElementById(labelId).textContent = `📷 ${file.name}`;
+      document.getElementById(labelId).textContent = '⏳ Compressing...';
+      try {
+        const compressed = await compressImageFile(file);
+        const blobName = file.name.replace(/\.[^.]+$/, '.jpg');
+        if (type === 'before') { beforePhotoName = blobName; beforePhotoBlob = compressed; }
+        else { afterPhotoName = blobName; afterPhotoBlob = compressed; }
+        document.getElementById(labelId).textContent = `📷 ${blobName} (${(compressed.size / 1024).toFixed(1)} KB)`;
+      } catch (err) {
+        document.getElementById(labelId).textContent = '❌ Compression failed';
+        console.error('[PHOTO] Compression failed:', err);
+      }
     }
 
-    function compressImageFile(file, maxDimension = 1920, quality = 0.7, maxMB = 1) {
+    function compressImageFile(file, maxDimension = 1280, quality = 0.7) {
       return new Promise((resolve, reject) => {
         if (!file || !file.type.startsWith('image/')) return resolve(file);
         const img = new Image();
@@ -464,21 +474,11 @@
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
 
-          const toBlob = (q) => new Promise((res) => canvas.toBlob(res, 'image/jpeg', q));
-          (async function reduce() {
-            try {
-              let q = quality;
-              let blob = await toBlob(q);
-              while (blob.size > maxMB * 1024 * 1024 && q > 0.3) {
-                q = Math.max(0.3, q - 0.1);
-                blob = await toBlob(q);
-              }
-              const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg', lastModified: Date.now() });
-              resolve(compressed);
-            } catch (e) {
-              reject(e);
-            }
-          })();
+          canvas.toBlob((blob) => {
+            if (!blob) return reject(new Error('Canvas toBlob returned null'));
+            const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg', lastModified: Date.now() });
+            resolve(compressed);
+          }, 'image/jpeg', quality);
         };
         img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Failed to load image')); };
         img.src = objectUrl;
@@ -496,23 +496,15 @@
         window.alert('Please select the operating crew member.');
         return;
       }
-      const beforeInput = document.getElementById('beforePhotoInput');
-      const afterInput = document.getElementById('afterPhotoInput');
-      const beforeFile = beforeInput && beforeInput.files ? beforeInput.files[0] : null;
-      const afterFile = afterInput && afterInput.files ? afterInput.files[0] : null;
-      if (!beforeFile || !afterFile) {
-        window.alert('Please capture BEFORE and AFTER photos.');
+      if (!beforePhotoBlob || !afterPhotoBlob) {
+        window.alert('Please capture and compress BEFORE and AFTER photos.');
         return;
       }
       try {
         resolveBtn.disabled = true;
-        const [compressedBefore, compressedAfter] = await Promise.all([
-          compressImageFile(beforeFile),
-          compressImageFile(afterFile)
-        ]);
         const formData = new FormData();
-        formData.append('beforePhoto', compressedBefore);
-        formData.append('afterPhoto', compressedAfter);
+        formData.append('beforePhoto', beforePhotoBlob);
+        formData.append('afterPhoto', afterPhotoBlob);
         formData.append('resolutionNotes', 'Resolved via mobile field app');
         formData.append('memberId', selectedMemberId);
         formData.append('memberName', selectedMemberName || '');

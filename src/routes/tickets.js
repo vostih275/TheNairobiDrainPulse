@@ -2,9 +2,9 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
-const { Readable } = require('stream');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const MaintenanceTicket = require('../models/MaintenanceTicket');
 const DrainNode = require('../models/DrainNode');
 
@@ -31,19 +31,29 @@ function uploadToCloudinary(file) {
   return new Promise((resolve, reject) => {
     const cldStream = cloudinary.uploader.upload_stream(
       { resource_type: 'image' },
-      (error, result) => {
+      async (error, result) => {
+        try { await fs.promises.unlink(file.path); } catch (_) { /* ignore */ }
         if (error) return reject(error);
         resolve(result.secure_url);
       }
     );
-    Readable.from(file.buffer).pipe(cldStream);
+    const readStream = fs.createReadStream(file.path);
+    readStream.on('error', (err) => {
+      fs.promises.unlink(file.path).catch(() => {});
+      reject(err);
+    });
+    readStream.pipe(cldStream);
   });
 }
 
-const diskStorage = multer.diskStorage({
+const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    cb(null, UPLOAD_DIR);
+    if (useCloudinary) {
+      cb(null, os.tmpdir());
+    } else {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      cb(null, UPLOAD_DIR);
+    }
   },
   filename: (req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
@@ -52,7 +62,7 @@ const diskStorage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage: useCloudinary ? multer.memoryStorage() : diskStorage,
+  storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
