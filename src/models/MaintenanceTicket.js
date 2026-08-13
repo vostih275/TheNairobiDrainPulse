@@ -9,6 +9,7 @@ const MaintenanceTicketSchema = new mongoose.Schema({
   severity: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
   notes: { type: String },
   diagnostic: { type: String },
+  diagnosticSummary: { type: String },
   resolutionNotes: { type: String },
   status: { type: String, enum: ['Pending', 'Assigned', 'Dispatched', 'Resolved'], default: 'Pending' },
   assignedCrew: { type: String, default: 'Unit 4 - Vacuum Truck' },

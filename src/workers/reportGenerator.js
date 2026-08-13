@@ -70,11 +70,12 @@ async function generateReport() {
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const allTickets = await MaintenanceTicket.find({
-    status: { $in: ['Pending', 'Dispatched', 'Resolved'] }
+    status: { $in: ['Pending', 'Dispatched', 'Resolved', 'Closed'] }
   }).sort({ createdAt: -1 }).lean();
 
-  const unresolvedTickets = allTickets.filter(t => t.status !== 'Resolved');
-  const resolvedTickets = allTickets.filter(t => t.status === 'Resolved');
+  const resolvedStatuses = ['Resolved', 'Closed'];
+  const unresolvedTickets = allTickets.filter(t => !resolvedStatuses.includes(t.status));
+  const resolvedTickets = allTickets.filter(t => resolvedStatuses.includes(t.status));
 
   const criticalStressCount = unresolvedTickets.filter(
     t => t.severity === 'High' || t.severity === 'Critical'
@@ -91,9 +92,10 @@ async function generateReport() {
 
   const rainfallAgg = await WeatherReading.aggregate([
     { $match: { timestamp: { $gte: sevenDaysAgo } } },
-    { $group: { _id: null, total: { $sum: '$rainfallRateMmHr' } } }
+    { $group: { _id: null, avg: { $avg: '$rainfallRateMmHr' } } }
   ]);
-  const cumulativeInflow = rainfallAgg.length > 0 ? rainfallAgg[0].total.toFixed(2) : '0.00';
+  const rawAvgInflow = rainfallAgg.length > 0 ? rainfallAgg[0].avg : 0;
+  const cumulativeInflow = Math.max(0, Math.min(250, rawAvgInflow)).toFixed(2);
 
   const networkHealth = await getNetworkHealth();
 
@@ -236,7 +238,7 @@ async function generateReport() {
       doc.fillColor('#450a0a')
         .fontSize(9)
         .font('Helvetica')
-        .text(`Diagnostic: ${primaryTicket.notes || 'No notes available'}`, MARGIN + 10, alertTop + 48, { width: CONTENT_WIDTH - 20 });
+        .text(`Diagnostic: ${primaryTicket.diagnosticSummary || primaryTicket.notes || 'No notes available'}`, MARGIN + 10, alertTop + 48, { width: CONTENT_WIDTH - 20 });
 
       const rainRate = parseNoteMetric(primaryTicket.notes, 'rain') || cumulativeInflow;
       const flowSpeed = primaryTelemetry ? primaryTelemetry.flowSpeed : (parseNoteMetric(primaryTicket.notes, 'flow') || '0');
@@ -284,7 +286,7 @@ async function generateReport() {
       `${t.locationName}\n${t.nodeId}`,
       t.severity,
       t.status,
-      t.notes || '-'
+      t.diagnosticSummary || t.notes || '-'
     ]);
 
     if (rows.length === 0) {

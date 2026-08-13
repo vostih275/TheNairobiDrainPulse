@@ -7,6 +7,7 @@ const DrainNode = require('../models/DrainNode');
 const Telemetry = require('../models/Telemetry');
 const MaintenanceTicket = require('../models/MaintenanceTicket');
 const { predictRisk } = require('../lib/predictiveEngine');
+const { generateDiagnosticSummary } = require('../utils/diagnosticEngine');
 
 const NODES = [
   { nodeId: 'NODE-001', locationName: 'South C - Muhoho Ave Junction', latitude: -1.3133, longitude: 36.8290, emptyDistanceMm: 1800 },
@@ -147,15 +148,21 @@ async function runSimulatorTick(io, scenario) {
           const severity = score < 20 ? 'Critical' : 'Medium';
           const siltation = Math.min(100, Math.max(0, 100 - Math.round(score)));
           const zeroFlow = decoded.flowSpeed === 0 || decoded.isBlocked;
-          const diagnostic = (siltation > 80 || zeroFlow)
-            ? `CRITICAL: ${siltation}% Siltation Blockage - Zero flow anomaly detected.`
-            : `High-priority asset stress detected. ${siltation}% siltation and flow speed ${decoded.flowSpeed} cm/s. Immediate desilting required.`;
+          const diagnosticSummary = generateDiagnosticSummary({
+            rainfall: prediction.rainfallRateMmHr,
+            flowSpeed: decoded.flowSpeed,
+            waterDepth,
+            capacity: node.maxDrainCapacityMm,
+            siltation,
+            siltationFlag: siltation > 80 || zeroFlow
+          });
           const ticket = await MaintenanceTicket.create({
             ticketId: `TKT-${uuidv4().slice(0, 8).toUpperCase()}`,
             nodeId: nodeDef.nodeId,
             locationName: node.locationName,
             severity,
-            diagnostic,
+            diagnostic: `Siltation ${siltation}% | Rain ${prediction.rainfallRateMmHr} mm/hr | Flow ${decoded.flowSpeed} cm/s | Depth ${waterDepth} mm`,
+            diagnosticSummary,
             status: 'Pending'
           });
           io.emit('new_ticket', ticket);

@@ -554,7 +554,8 @@
                 <span class="text-xs text-slate-400">${t.ticketId}</span>
               </div>
               <div class="text-sm font-semibold mt-1 truncate">${t.locationName}</div>
-              <div class="text-xs text-slate-400 truncate">Node: ${t.nodeId} · Crew: ${t.assignedCrew || '—'} · ${t.notes || 'No notes'}</div>
+              <div class="text-xs text-slate-400 truncate">Node: ${t.nodeId} · Crew: ${t.assignedCrew || '—'}</div>
+              <div class="text-xs ${t.diagnosticSummary?.includes('Severe') || t.diagnosticSummary?.includes('Critical') ? 'text-amber-300' : 'text-slate-500'} truncate">${t.diagnosticSummary || t.notes || 'No diagnostic available.'}</div>
             </div>
             <div class="flex flex-wrap gap-2 w-full sm:w-auto">
               ${t.status === 'Pending' ? `<button onclick="openDispatchModal('${t.ticketId}')" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold whitespace-nowrap">Dispatch Crew</button>` : ''}
@@ -665,7 +666,7 @@ function openDispatchModal(ticketId) {
     if (!ticket) return;
     currentDispatchTicketId = ticketId;
     document.getElementById('modalTicketId').textContent = ticket.ticketId;
-    document.getElementById('modalDiagnostic').textContent = ticket.notes || 'No diagnostic available.';
+    document.getElementById('modalDiagnostic').textContent = ticket.diagnosticSummary || ticket.notes || 'No diagnostic available.';
 
     const crewSelect = document.getElementById('crewSelect');
     crewSelect.innerHTML = crewsCache.map(c => `<option value="${c.crewName}">${c.crewName}</option>`).join('');
