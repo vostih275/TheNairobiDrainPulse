@@ -467,16 +467,44 @@
     }
   }
 
-  function makePhotoGrid(urls, size = 70) {
-    if (!Array.isArray(urls) || urls.length === 0) return '<span class="text-muted text-xs">None</span>';
-    const px = size + 'px';
-    return '<div class="ticket-photos-grid" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">' +
-      urls.map(url => `
-        <a href="${url}" target="_blank" rel="noopener noreferrer">
-          <img src="${url}" alt="Field Photo" style="width: ${px}; height: ${px}; object-fit: cover; border-radius: 4px; border: 1px solid #475569;" />
-        </a>
-      `).join('') +
-    '</div>';
+  function renderTicketPhotos(ticket, size = 70) {
+    const photos = ticket.photoUrls || {};
+    let before = [];
+    let after = [];
+
+    if (Array.isArray(photos)) {
+      after = photos;
+    } else if (photos && typeof photos === 'object') {
+      before = Array.isArray(photos.before) ? photos.before : (photos.before ? [photos.before] : []);
+      after = Array.isArray(photos.after) ? photos.after : (photos.after ? [photos.after] : []);
+    }
+
+    if (!before.length && ticket.beforePhotoUrl) before = [ticket.beforePhotoUrl];
+    if (!after.length && ticket.afterPhotoUrl) after = [ticket.afterPhotoUrl];
+    if (!after.length && ticket.photoUrl) after = [ticket.photoUrl];
+
+    const labelClass = size > 80 ? 'text-xs' : 'text-[10px]';
+    const renderColumn = (label, urls) => `
+      <div class="photo-section">
+        <p class="${labelClass} uppercase text-slate-500 mb-1">${label}</p>
+        <div class="ticket-photos-grid" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          ${urls.length > 0 ? urls.map(url => `
+            <a href="${url}" target="_blank" rel="noopener noreferrer">
+              <img src="${url}" alt="${label} Field Photo" style="width: ${size}px; height: ${size}px; object-fit: cover; border-radius: 4px; border: 1px solid #475569;" />
+            </a>
+          `).join('') : '<span class="text-muted text-xs">None</span>'}
+        </div>
+      </div>
+    `;
+
+    return `
+      <div class="photo-container" style="margin-top: 8px;">
+        ${renderColumn('Before', before)}
+        <div class="mt-2">
+          ${renderColumn('After', after)}
+        </div>
+      </div>
+    `;
   }
 
   async function loadResolvedTickets() {
@@ -503,19 +531,7 @@
               <button onclick="openProofModal('${t.ticketId}')" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold whitespace-nowrap">&#128247; View Proof of Work</button>
             </div>
           </div>
-          <div class="mt-2">
-            <p class="text-[10px] uppercase text-slate-500">Before</p>
-            ${makePhotoGrid(t.photoUrls?.before || (t.beforePhotoUrl ? [t.beforePhotoUrl] : []))}
-          </div>
-          <div class="mt-2">
-            <p class="text-[10px] uppercase text-slate-500">After</p>
-            ${makePhotoGrid(
-              (t.photoUrls && Array.isArray(t.photoUrls.after)) ? t.photoUrls.after :
-              Array.isArray(t.photoUrls) ? t.photoUrls :
-              t.afterPhotoUrl ? [t.afterPhotoUrl] :
-              t.photoUrl ? [t.photoUrl] : []
-            )}
-          </div>
+          ${renderTicketPhotos(t)}
         </div>
       `).join('');
     } catch (e) {
@@ -535,22 +551,8 @@
       document.getElementById('proofLocation').textContent = ticket.locationName;
       document.getElementById('proofResolvedBy').textContent = ticket.actionAudit?.resolvedByMemberName || '—';
 
-      const beforeUrls = (ticket.photoUrls && Array.isArray(ticket.photoUrls.before)) ? ticket.photoUrls.before : (ticket.beforePhotoUrl ? [ticket.beforePhotoUrl] : []);
-      const afterUrls = (ticket.photoUrls && Array.isArray(ticket.photoUrls.after)) ? ticket.photoUrls.after :
-                        Array.isArray(ticket.photoUrls) ? ticket.photoUrls :
-                        ticket.afterPhotoUrl ? [ticket.afterPhotoUrl] :
-                        ticket.photoUrl ? [ticket.photoUrl] : [];
       const photosContainer = document.getElementById('proofPhotos');
-      photosContainer.innerHTML = `
-        <div>
-          <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">Before</p>
-          ${makePhotoGrid(beforeUrls, 120)}
-        </div>
-        <div class="mt-4">
-          <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">After</p>
-          ${makePhotoGrid(afterUrls, 120)}
-        </div>
-      `;
+      photosContainer.innerHTML = renderTicketPhotos(ticket, 120);
       document.getElementById('proofModal').classList.remove('hidden');
     } catch (e) {
       console.error('[PROOF] Failed to open', e);
