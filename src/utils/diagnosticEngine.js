@@ -1,32 +1,22 @@
-function generateDiagnosticSummary(telemetryData = {}) {
-  const rainfall = Number(telemetryData.rainfall) || 0;
-  const flowSpeed = Number(telemetryData.flowSpeed) || 0;
-  const waterLevel = Number(telemetryData.waterLevel ?? telemetryData.waterDepth) || 0;
-  const capacity = Number(telemetryData.capacity) || 1;
-  const siltationFlag = !!telemetryData.siltationFlag || (Number(telemetryData.siltation) > 80);
+function generateDiagnosticSummary(data = {}) {
+  const { rainfallRate = 0, flowSpeed = 0, siltationFlag = false, waterLevel = 0 } = data;
 
-  if (siltationFlag) {
-    return 'Severe siltation/debris blockage detected. Reduced conduit capacity requiring desilting crew.';
+  if (siltationFlag === true || siltationFlag === 'YES' || siltationFlag === 'Yes') {
+    return "Severe siltation/debris blockage detected. Reduced conduit capacity requiring desilting crew.";
   }
-
-  if (rainfall > 50) {
-    return `Torrential storm runoff detected (${rainfall.toFixed(1)} mm/hr). Rapid intake saturation.`;
+  if (rainfallRate > 50) {
+    return `Torrential storm runoff detected (${rainfallRate} mm/hr). Rapid intake saturation.`;
   }
-
-  if (flowSpeed > 200 && rainfall >= 15) {
-    return `High hydraulic velocity (${flowSpeed.toFixed(1)} cm/s) causing scouring risk at conduit outlet.`;
+  if (flowSpeed > 200 && rainfallRate > 15) {
+    return `High hydraulic velocity (${flowSpeed} cm/s) causing scouring risk at conduit outlet.`;
   }
-
-  const fillPercent = capacity > 0 ? (waterLevel / capacity) * 100 : 0;
-  if (fillPercent > 75) {
-    return 'Critical spillover threshold reached. Downstream overflow imminent.';
+  if (waterLevel > 75) {
+    return "Critical spillover threshold reached. Downstream overflow imminent.";
   }
-
-  if (rainfall >= 15 && rainfall <= 50) {
-    return 'Elevated runoff entering catchment; monitoring drainage throughput.';
+  if (rainfallRate >= 15 && rainfallRate <= 50) {
+    return `Elevated runoff entering catchment (${rainfallRate} mm/hr); monitoring drainage throughput.`;
   }
-
-  return 'Operational within normal parameters. Sensors nominal.';
+  return "Operational within normal parameters. Routine maintenance check recommended.";
 }
 
 module.exports = { generateDiagnosticSummary };

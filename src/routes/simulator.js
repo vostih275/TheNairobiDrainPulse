@@ -149,12 +149,10 @@ async function runSimulatorTick(io, scenario) {
           const siltation = Math.min(100, Math.max(0, 100 - Math.round(score)));
           const zeroFlow = decoded.flowSpeed === 0 || decoded.isBlocked;
           const diagnosticSummary = generateDiagnosticSummary({
-            rainfall: prediction.rainfallRateMmHr,
+            rainfallRate: prediction.rainfallRateMmHr,
             flowSpeed: decoded.flowSpeed,
-            waterDepth,
-            capacity: node.maxDrainCapacityMm,
-            siltation,
-            siltationFlag: siltation > 80 || zeroFlow
+            siltationFlag: siltation > 80 || zeroFlow,
+            waterLevel: fillLevel
           });
           const ticket = await MaintenanceTicket.create({
             ticketId: `TKT-${uuidv4().slice(0, 8).toUpperCase()}`,
