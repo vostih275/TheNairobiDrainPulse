@@ -491,6 +491,20 @@
               <button onclick="openProofModal('${t.ticketId}')" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold whitespace-nowrap">&#128247; View Proof of Work</button>
             </div>
           </div>
+          <div class="ticket-photos-grid" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+            ${(t.photoUrls && t.photoUrls.length > 0) ?
+              t.photoUrls.map(url => `
+                <a href="${url}" target="_blank" rel="noopener noreferrer">
+                  <img src="${url}" alt="Field Photo" style="width: 70px; height: 70px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc;" />
+                </a>
+              `).join('')
+              : t.photoUrl ? `
+                <a href="${t.photoUrl}" target="_blank" rel="noopener noreferrer">
+                  <img src="${t.photoUrl}" alt="Field Photo" style="width: 70px; height: 70px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc;" />
+                </a>
+              ` : '<span class="text-muted">No photos attached</span>'
+            }
+          </div>
         </div>
       `).join('');
     } catch (e) {
@@ -509,16 +523,22 @@
       document.getElementById('proofTicketId').textContent = ticket.ticketId;
       document.getElementById('proofLocation').textContent = ticket.locationName;
       document.getElementById('proofResolvedBy').textContent = ticket.actionAudit?.resolvedByMemberName || '—';
-      const beforeImg = document.getElementById('proofBefore');
-      const beforePlaceholder = document.getElementById('proofBeforePlaceholder');
-      beforeImg.src = ticket.beforePhotoUrl || '';
-      beforeImg.classList.toggle('hidden', !ticket.beforePhotoUrl);
-      beforePlaceholder.classList.toggle('hidden', !!ticket.beforePhotoUrl);
-      const afterImg = document.getElementById('proofAfter');
-      const afterPlaceholder = document.getElementById('proofAfterPlaceholder');
-      afterImg.src = ticket.afterPhotoUrl || '';
-      afterImg.classList.toggle('hidden', !ticket.afterPhotoUrl);
-      afterPlaceholder.classList.toggle('hidden', !!ticket.afterPhotoUrl);
+
+      const urls = ticket.photoUrls && ticket.photoUrls.length > 0
+        ? ticket.photoUrls
+        : ticket.photoUrl
+          ? [ticket.photoUrl]
+          : [];
+      const photosContainer = document.getElementById('proofPhotos');
+      if (urls.length === 0) {
+        photosContainer.innerHTML = '<span class="text-muted">No photos attached</span>';
+      } else {
+        photosContainer.innerHTML = urls.map(url => `
+          <a href="${url}" target="_blank" rel="noopener noreferrer">
+            <img src="${url}" alt="Field Photo" style="width: 120px; height: 120px; object-fit: cover; border-radius: 4px; border: 1px solid #475569;" />
+          </a>
+        `).join('');
+      }
       document.getElementById('proofModal').classList.remove('hidden');
     } catch (e) {
       console.error('[PROOF] Failed to open', e);
@@ -1131,17 +1151,8 @@ function openDispatchModal(ticketId) {
       </div>
       <div class="p-6 space-y-4">
         <div class="text-sm text-slate-300">Resolved by: <span id="proofResolvedBy" class="font-semibold text-white">—</span></div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="space-y-2">
-            <p class="text-xs text-slate-500 uppercase tracking-wide">Before</p>
-            <img id="proofBefore" src="" class="w-full rounded-lg border border-slate-700 hidden" />
-            <p id="proofBeforePlaceholder" class="text-xs text-slate-500 border border-slate-700 rounded-lg p-4 text-center">No before photo</p>
-          </div>
-          <div class="space-y-2">
-            <p class="text-xs text-slate-500 uppercase tracking-wide">After</p>
-            <img id="proofAfter" src="" class="w-full rounded-lg border border-slate-700 hidden" />
-            <p id="proofAfterPlaceholder" class="text-xs text-slate-500 border border-slate-700 rounded-lg p-4 text-center">No after photo</p>
-          </div>
+        <div id="proofPhotos" class="ticket-photos-grid" style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <span class="text-muted">No photos attached</span>
         </div>
       </div>
       <div class="flex items-center justify-end gap-3 px-6 py-4 bg-slate-800/50 border-t border-slate-700">
