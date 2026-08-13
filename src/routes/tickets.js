@@ -70,9 +70,17 @@ const upload = multer({
   }
 });
 
+const uploadFields = upload.fields([
+  { name: 'beforePhotos', maxCount: 3 },
+  { name: 'afterPhotos', maxCount: 3 }
+]);
+
 const resolveUpload = (req, res, next) => {
   if (req.is('multipart/form-data')) {
-    upload.fields([{ name: 'beforePhotos', maxCount: 5 }, { name: 'afterPhotos', maxCount: 5 }])(req, res, next);
+    uploadFields(req, res, (err) => {
+      if (err) return res.status(400).json({ success: false, error: err.message });
+      next();
+    });
   } else {
     next();
   }

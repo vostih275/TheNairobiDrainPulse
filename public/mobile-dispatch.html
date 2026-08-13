@@ -405,11 +405,11 @@
           <div class="space-y-3">
             <label class="touch-manipulation block w-full rounded-xl bg-amber-700 px-4 py-3.5 text-sm font-semibold text-white shadow-md active:bg-amber-800 cursor-pointer text-center">
               <input id="beforePhotos" type="file" accept="image/*" multiple class="hidden" onchange="onPhotosSelected('before', this)">
-              <span id="beforeLabel">📷 Select BEFORE photos (up to 5)</span>
+              <span id="beforeLabel">📷 Select BEFORE photos (up to 3)</span>
             </label>
             <label class="touch-manipulation block w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-sm font-semibold text-white shadow-md active:bg-emerald-800 cursor-pointer text-center">
               <input id="afterPhotos" type="file" accept="image/*" multiple class="hidden" onchange="onPhotosSelected('after', this)">
-              <span id="afterLabel">📷 Select AFTER photos (up to 5)</span>
+              <span id="afterLabel">📷 Select AFTER photos (up to 3)</span>
             </label>
             <label class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
               <input
@@ -432,7 +432,7 @@
     }
 
     async function onPhotosSelected(type, input) {
-      const files = Array.from(input.files || []).slice(0, 5);
+      const files = Array.from(input.files || []).slice(0, 3);
       if (!files.length) return;
       const labelId = type === 'before' ? 'beforeLabel' : 'afterLabel';
       const label = document.getElementById(labelId);
