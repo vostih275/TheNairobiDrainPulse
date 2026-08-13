@@ -467,6 +467,18 @@
     }
   }
 
+  function makePhotoGrid(urls, size = 70) {
+    if (!Array.isArray(urls) || urls.length === 0) return '<span class="text-muted text-xs">None</span>';
+    const px = size + 'px';
+    return '<div class="ticket-photos-grid" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">' +
+      urls.map(url => `
+        <a href="${url}" target="_blank" rel="noopener noreferrer">
+          <img src="${url}" alt="Field Photo" style="width: ${px}; height: ${px}; object-fit: cover; border-radius: 4px; border: 1px solid #475569;" />
+        </a>
+      `).join('') +
+    '</div>';
+  }
+
   async function loadResolvedTickets() {
     try {
       const tickets = await fetch('/api/v1/tickets').then(r => r.json());
@@ -491,19 +503,18 @@
               <button onclick="openProofModal('${t.ticketId}')" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold whitespace-nowrap">&#128247; View Proof of Work</button>
             </div>
           </div>
-          <div class="ticket-photos-grid" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
-            ${(t.photoUrls && t.photoUrls.length > 0) ?
-              t.photoUrls.map(url => `
-                <a href="${url}" target="_blank" rel="noopener noreferrer">
-                  <img src="${url}" alt="Field Photo" style="width: 70px; height: 70px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc;" />
-                </a>
-              `).join('')
-              : t.photoUrl ? `
-                <a href="${t.photoUrl}" target="_blank" rel="noopener noreferrer">
-                  <img src="${t.photoUrl}" alt="Field Photo" style="width: 70px; height: 70px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc;" />
-                </a>
-              ` : '<span class="text-muted">No photos attached</span>'
-            }
+          <div class="mt-2">
+            <p class="text-[10px] uppercase text-slate-500">Before</p>
+            ${makePhotoGrid(t.photoUrls?.before || (t.beforePhotoUrl ? [t.beforePhotoUrl] : []))}
+          </div>
+          <div class="mt-2">
+            <p class="text-[10px] uppercase text-slate-500">After</p>
+            ${makePhotoGrid(
+              (t.photoUrls && Array.isArray(t.photoUrls.after)) ? t.photoUrls.after :
+              Array.isArray(t.photoUrls) ? t.photoUrls :
+              t.afterPhotoUrl ? [t.afterPhotoUrl] :
+              t.photoUrl ? [t.photoUrl] : []
+            )}
           </div>
         </div>
       `).join('');
@@ -524,21 +535,22 @@
       document.getElementById('proofLocation').textContent = ticket.locationName;
       document.getElementById('proofResolvedBy').textContent = ticket.actionAudit?.resolvedByMemberName || '—';
 
-      const urls = ticket.photoUrls && ticket.photoUrls.length > 0
-        ? ticket.photoUrls
-        : ticket.photoUrl
-          ? [ticket.photoUrl]
-          : [];
+      const beforeUrls = (ticket.photoUrls && Array.isArray(ticket.photoUrls.before)) ? ticket.photoUrls.before : (ticket.beforePhotoUrl ? [ticket.beforePhotoUrl] : []);
+      const afterUrls = (ticket.photoUrls && Array.isArray(ticket.photoUrls.after)) ? ticket.photoUrls.after :
+                        Array.isArray(ticket.photoUrls) ? ticket.photoUrls :
+                        ticket.afterPhotoUrl ? [ticket.afterPhotoUrl] :
+                        ticket.photoUrl ? [ticket.photoUrl] : [];
       const photosContainer = document.getElementById('proofPhotos');
-      if (urls.length === 0) {
-        photosContainer.innerHTML = '<span class="text-muted">No photos attached</span>';
-      } else {
-        photosContainer.innerHTML = urls.map(url => `
-          <a href="${url}" target="_blank" rel="noopener noreferrer">
-            <img src="${url}" alt="Field Photo" style="width: 120px; height: 120px; object-fit: cover; border-radius: 4px; border: 1px solid #475569;" />
-          </a>
-        `).join('');
-      }
+      photosContainer.innerHTML = `
+        <div>
+          <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">Before</p>
+          ${makePhotoGrid(beforeUrls, 120)}
+        </div>
+        <div class="mt-4">
+          <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">After</p>
+          ${makePhotoGrid(afterUrls, 120)}
+        </div>
+      `;
       document.getElementById('proofModal').classList.remove('hidden');
     } catch (e) {
       console.error('[PROOF] Failed to open', e);

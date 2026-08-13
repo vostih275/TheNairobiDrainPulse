@@ -152,7 +152,8 @@ async function runSimulatorTick(io, scenario) {
             rainfallRate: prediction.rainfallRateMmHr,
             flowSpeed: decoded.flowSpeed,
             siltationFlag: siltation > 80 || zeroFlow,
-            waterLevel: fillLevel
+            waterLevel: fillLevel,
+            locationName: node.locationName
           });
           const ticket = await MaintenanceTicket.create({
             ticketId: `TKT-${uuidv4().slice(0, 8).toUpperCase()}`,

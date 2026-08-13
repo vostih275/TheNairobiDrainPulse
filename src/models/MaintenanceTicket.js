@@ -15,7 +15,10 @@ const MaintenanceTicketSchema = new mongoose.Schema({
   assignedCrew: { type: String, default: 'Unit 4 - Vacuum Truck' },
   beforePhotoUrl: { type: String },
   afterPhotoUrl: { type: String },
-  photoUrls: [{ type: String }],
+  photoUrls: {
+    before: [{ type: String }],
+    after: [{ type: String }]
+  },
   actionAudit: {
     resolvedByMemberId: { type: String },
     resolvedByMemberName: { type: String }
