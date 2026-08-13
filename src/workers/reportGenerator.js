@@ -265,12 +265,13 @@ async function generateReport() {
     doc.moveDown(0.5);
 
     const tableTop = doc.y;
+    const diagnosticWidth = Math.round(CONTENT_WIDTH * 0.4);
     const columns = [
-      { header: 'Ticket ID', width: 90 },
-      { header: 'Location & Node ID', width: 130 },
-      { header: 'Priority', width: 60 },
-      { header: 'Status', width: 70 },
-      { header: 'Diagnostic Summary', width: CONTENT_WIDTH - 90 - 130 - 60 - 70 }
+      { header: 'Ticket ID', width: 80 },
+      { header: 'Location & Node ID', width: CONTENT_WIDTH - 80 - 55 - 65 - diagnosticWidth },
+      { header: 'Priority', width: 55 },
+      { header: 'Status', width: 65 },
+      { header: 'Diagnostic Summary', width: diagnosticWidth }
     ];
 
     // Header
@@ -298,23 +299,29 @@ async function generateReport() {
       ty += 24;
     } else {
       rows.forEach((row, i) => {
-        if (ty > PAGE_HEIGHT - MARGIN - 40) {
+        doc.fillColor('#0f172a').fontSize(8).font('Helvetica');
+        const rowHeights = row.map((cell, idx) => {
+          const col = columns[idx];
+          return doc.heightOfString(String(cell), { width: col.width - 8 });
+        });
+        const rowHeight = Math.max(36, Math.max(...rowHeights) + 10);
+
+        if (ty + rowHeight > PAGE_HEIGHT - MARGIN) {
           doc.addPage();
           ty = MARGIN;
         }
+
         const fill = i % 2 === 0 ? '#f8fafc' : '#ffffff';
-        doc.fillColor(fill).rect(MARGIN, ty, CONTENT_WIDTH, 36).fill();
+        doc.fillColor(fill).rect(MARGIN, ty, CONTENT_WIDTH, rowHeight).fill();
 
         doc.fillColor('#0f172a').fontSize(8).font('Helvetica');
         cx = MARGIN;
         row.forEach((cell, idx) => {
           const col = columns[idx];
-          let text = String(cell);
-          if (idx === 4 && text.length > 110) text = text.substring(0, 110) + '…';
-          doc.text(text, cx + 4, ty + 5, { width: col.width - 8, height: 28, ellipsis: true });
+          doc.text(String(cell), cx + 4, ty + 5, { width: col.width - 8, height: rowHeight - 10, ellipsis: false });
           cx += col.width;
         });
-        ty += 36;
+        ty += rowHeight;
       });
     }
 
