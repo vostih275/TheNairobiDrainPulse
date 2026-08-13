@@ -185,10 +185,7 @@
 
     let crews = [];
     let currentTicketId = null;
-    let beforePhotoName = null;
-    let afterPhotoName = null;
-    let beforePhotoBlob = null;
-    let afterPhotoBlob = null;
+    let photoBlobs = [];
     let selectedMemberId = null;
     let selectedMemberName = null;
     let queuedTicket = null;
@@ -406,12 +403,8 @@
           <h3 class="text-sm font-semibold text-slate-300 mb-3">Remediation Workflow</h3>
           <div class="space-y-3">
             <label class="touch-manipulation block w-full rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-semibold text-white shadow-md active:bg-blue-700 cursor-pointer text-center">
-              <input id="beforePhotoInput" type="file" accept="image/*" class="hidden" onchange="onPhotoSelected('before', this)">
-              <span id="beforeLabel">📷 Capture BEFORE Photo</span>
-            </label>
-            <label class="touch-manipulation block w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3.5 text-sm font-medium text-slate-200 shadow-sm active:bg-slate-700 cursor-pointer text-center">
-              <input id="afterPhotoInput" type="file" accept="image/*" class="hidden" onchange="onPhotoSelected('after', this)">
-              <span id="afterLabel">📷 Capture AFTER Photo</span>
+              <input id="photoInput" type="file" accept="image/*" multiple class="hidden" onchange="onPhotoSelected(this)">
+              <span id="photoLabel">📷 Select up to 5 photos</span>
             </label>
             <label class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
               <input
@@ -433,23 +426,25 @@
       resolveBtn.disabled = !selectedMemberId;
     }
 
-    async function onPhotoSelected(type, input) {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      const labelId = type === 'before' ? 'beforeLabel' : 'afterLabel';
-      window.alert(`Step 2: File detected, starting compression (${type})`);
-      console.log(`[PHOTO] Starting compression for ${type}`, file.name, file.size);
-      document.getElementById(labelId).textContent = '⏳ Compressing...';
+    async function onPhotoSelected(input) {
+      const files = Array.from(input.files || []).slice(0, 5);
+      if (!files.length) return;
+      const label = document.getElementById('photoLabel');
+      window.alert('Step 2: ' + files.length + ' files detected, starting compression');
+      console.log('[PHOTO] Starting compression for', files.length, 'files');
+      label.textContent = '⏳ Compressing ' + files.length + ' photo(s)...';
+      photoBlobs = [];
       try {
-        const compressed = await compressPhoto(file);
-        const blobName = file.name.replace(/\.[^.]+$/, '.jpg');
-        if (type === 'before') { beforePhotoName = blobName; beforePhotoBlob = compressed; }
-        else { afterPhotoName = blobName; afterPhotoBlob = compressed; }
-        document.getElementById(labelId).textContent = `📷 ${blobName} (${(compressed.size / 1024).toFixed(1)} KB)`;
-        console.log(`[PHOTO] Compression done for ${type}: ${compressed.size} bytes`);
-        window.alert('Step 3: Compression complete. Blob size: ' + compressed.size);
+        for (const file of files) {
+          const compressed = await compressPhoto(file);
+          photoBlobs.push(compressed);
+        }
+        const total = photoBlobs.reduce((sum, b) => sum + b.size, 0);
+        label.textContent = `📷 ${photoBlobs.length} photos (${(total / 1024).toFixed(1)} KB)`;
+        console.log('[PHOTO] Compression done:', photoBlobs.length, 'blobs, total', total);
+        window.alert('Step 3: Compression complete. ' + photoBlobs.length + ' blobs, total ' + total + ' bytes');
       } catch (err) {
-        document.getElementById(labelId).textContent = '❌ Compression failed';
+        label.textContent = '❌ Compression failed';
         console.error('[PHOTO] Compression failed:', err);
         window.alert('CRASH: ' + err.message);
       }
@@ -494,17 +489,16 @@
           window.alert('Please select the operating crew member.');
           return;
         }
-        if (!beforePhotoBlob || !afterPhotoBlob) {
-          window.alert('Please capture and compress BEFORE and AFTER photos.');
+        if (photoBlobs.length === 0) {
+          window.alert('Please select at least one photo.');
           return;
         }
         resolveBtn.disabled = true;
         const uploadUrl = `/api/v1/tickets/${currentTicketId}/resolve`;
         window.alert('Step 4: Starting network request to ' + uploadUrl);
-        console.log('[RESOLVE] Sending request for ticket', currentTicketId, 'with blobs', beforePhotoBlob.size, afterPhotoBlob.size);
+        console.log('[RESOLVE] Sending request for ticket', currentTicketId, 'with', photoBlobs.length, 'photos');
         const formData = new FormData();
-        formData.append('beforePhoto', beforePhotoBlob, beforePhotoName || 'before.jpg');
-        formData.append('afterPhoto', afterPhotoBlob, afterPhotoName || 'after.jpg');
+        photoBlobs.forEach(blob => formData.append('photos', blob, blob.name || 'photo.jpg'));
         formData.append('resolutionNotes', 'Resolved via mobile field app');
         formData.append('memberId', selectedMemberId);
         formData.append('memberName', selectedMemberName || '');

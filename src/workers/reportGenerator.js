@@ -71,7 +71,10 @@ async function generateReport() {
 
   const allTickets = await MaintenanceTicket.find({
     status: { $in: ['Pending', 'Dispatched', 'Resolved', 'Closed'] }
-  }).sort({ createdAt: -1 }).lean();
+  })
+    .select('ticketId nodeId locationName severity status diagnosticSummary notes createdAt resolvedAt assignedCrew actionAudit')
+    .sort({ createdAt: -1 })
+    .lean();
 
   const resolvedStatuses = ['Resolved', 'Closed'];
   const unresolvedTickets = allTickets.filter(t => !resolvedStatuses.includes(t.status));
@@ -286,7 +289,7 @@ async function generateReport() {
       `${t.locationName}\n${t.nodeId}`,
       t.severity,
       t.status,
-      t.diagnosticSummary || t.notes || '-'
+      t.diagnosticSummary || 'N/A'
     ]);
 
     if (rows.length === 0) {

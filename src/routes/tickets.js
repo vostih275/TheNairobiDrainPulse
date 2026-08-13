@@ -72,7 +72,7 @@ const upload = multer({
 
 const resolveUpload = (req, res, next) => {
   if (req.is('multipart/form-data')) {
-    upload.fields([{ name: 'beforePhoto', maxCount: 1 }, { name: 'afterPhoto', maxCount: 1 }])(req, res, next);
+    upload.array('photos', 5)(req, res, next);
   } else {
     next();
   }
@@ -121,17 +121,16 @@ router.patch('/:ticketId/resolve', resolveUpload, async (req, res) => {
   try {
     const { resolutionNotes, memberId, memberName } = req.body;
     const set = { status: 'Resolved', resolvedAt: new Date(), resolutionNotes: resolutionNotes || '' };
-    const beforeFile = req.files?.beforePhoto?.[0];
-    const afterFile = req.files?.afterPhoto?.[0];
-    if (beforeFile) {
-      set.beforePhotoUrl = useCloudinary ? await uploadToCloudinary(beforeFile) : '/uploads/' + beforeFile.filename;
-    } else if (req.body.beforePhotoUrl) {
-      set.beforePhotoUrl = req.body.beforePhotoUrl;
-    }
-    if (afterFile) {
-      set.afterPhotoUrl = useCloudinary ? await uploadToCloudinary(afterFile) : '/uploads/' + afterFile.filename;
-    } else if (req.body.afterPhotoUrl) {
-      set.afterPhotoUrl = req.body.afterPhotoUrl;
+    const uploadedFiles = req.files || [];
+    if (uploadedFiles.length > 0) {
+      const urls = await Promise.all(
+        uploadedFiles.map(file =>
+          useCloudinary ? uploadToCloudinary(file) : '/uploads/' + file.filename
+        )
+      );
+      set.photoUrls = urls;
+    } else if (req.body.photoUrls) {
+      set.photoUrls = Array.isArray(req.body.photoUrls) ? req.body.photoUrls : [req.body.photoUrls];
     }
     if (memberId || memberName) {
       set['actionAudit.resolvedByMemberId'] = memberId || '';
