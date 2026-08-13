@@ -436,6 +436,7 @@
       const file = input.files && input.files[0];
       if (!file) return;
       const labelId = type === 'before' ? 'beforeLabel' : 'afterLabel';
+      window.alert(`Step 2: File detected, starting compression (${type})`);
       console.log(`[PHOTO] Starting compression for ${type}`, file.name, file.size);
       document.getElementById(labelId).textContent = '⏳ Compressing...';
       try {
@@ -445,10 +446,11 @@
         else { afterPhotoName = blobName; afterPhotoBlob = compressed; }
         document.getElementById(labelId).textContent = `📷 ${blobName} (${(compressed.size / 1024).toFixed(1)} KB)`;
         console.log(`[PHOTO] Compression done for ${type}: ${compressed.size} bytes`);
+        window.alert('Step 3: Compression complete. Blob size: ' + compressed.size);
       } catch (err) {
         document.getElementById(labelId).textContent = '❌ Compression failed';
         console.error('[PHOTO] Compression failed:', err);
-        window.alert('Photo compression failed: ' + err.message);
+        window.alert('CRASH: ' + err.message);
       }
     }
 
@@ -476,35 +478,42 @@
 
     async function resolveTicket(e) {
       if (e && e.preventDefault) e.preventDefault();
-      if (!currentTicketId) {
-        window.alert('No active ticket selected.');
-        return;
-      }
-      const flowRestored = document.getElementById('flowRestored')?.checked;
-      if (!flowRestored) {
-        window.alert('Please confirm culvert flow has been restored.');
-        return;
-      }
-      if (!selectedMemberId) {
-        window.alert('Please select the operating crew member.');
-        return;
-      }
-      if (!beforePhotoBlob || !afterPhotoBlob) {
-        window.alert('Please capture and compress BEFORE and AFTER photos.');
-        return;
-      }
-      console.log('[RESOLVE] Sending request for ticket', currentTicketId, 'with blobs', beforePhotoBlob.size, afterPhotoBlob.size);
+      window.alert('Step 1: Form submit triggered');
       try {
+        if (!currentTicketId) {
+          window.alert('No active ticket selected.');
+          return;
+        }
+        const flowRestored = document.getElementById('flowRestored')?.checked;
+        if (!flowRestored) {
+          window.alert('Please confirm culvert flow has been restored.');
+          return;
+        }
+        if (!selectedMemberId) {
+          window.alert('Please select the operating crew member.');
+          return;
+        }
+        if (!beforePhotoBlob || !afterPhotoBlob) {
+          window.alert('Please capture and compress BEFORE and AFTER photos.');
+          return;
+        }
         resolveBtn.disabled = true;
+        const uploadUrl = `/api/v1/tickets/${currentTicketId}/resolve`;
+        window.alert('Step 4: Starting network request to ' + uploadUrl);
+        console.log('[RESOLVE] Sending request for ticket', currentTicketId, 'with blobs', beforePhotoBlob.size, afterPhotoBlob.size);
         const formData = new FormData();
         formData.append('beforePhoto', beforePhotoBlob, beforePhotoName || 'before.jpg');
         formData.append('afterPhoto', afterPhotoBlob, afterPhotoName || 'after.jpg');
         formData.append('resolutionNotes', 'Resolved via mobile field app');
         formData.append('memberId', selectedMemberId);
         formData.append('memberName', selectedMemberName || '');
-        const res = await fetch(`/api/v1/tickets/${currentTicketId}/resolve`, {
+        const res = await fetch(uploadUrl, {
           method: 'PATCH',
           body: formData
+        }).catch(err => {
+          alert('NETWORK ERROR: ' + err.message);
+          resolveBtn.disabled = false;
+          throw err;
         });
         const data = await res.json();
         console.log('[RESOLVE] Server response', res.status, data);
@@ -518,7 +527,7 @@
         }
       } catch (err) {
         console.error('[MOBILE] Resolve failed', err);
-        window.alert(err.message || 'Network request failed. Check your connection and try again.');
+        window.alert('CRASH: ' + err.message);
         resolveBtn.disabled = false;
       }
     }
