@@ -105,8 +105,9 @@
       </div>
     </main>
     <footer class="sticky bottom-0 z-50 bg-slate-950 border-t border-slate-800 p-4">
-      <div class="max-w-md mx-auto">
+      <div class="max-w-md mx-auto space-y-2">
         <button id="resolveBtn" type="button" disabled onclick="resolveTicket(event)" class="touch-manipulation w-full rounded-xl bg-emerald-600 px-4 py-4 text-base font-bold text-white shadow-lg active:bg-emerald-700 transition">RESOLVE & CLOSE TICKET</button>
+        <small class="text-muted">For older devices, take the photo with your camera app first, then select it from your gallery to prevent browser crashes.</small>
       </div>
     </footer>
   </div>
@@ -405,11 +406,11 @@
           <h3 class="text-sm font-semibold text-slate-300 mb-3">Remediation Workflow</h3>
           <div class="space-y-3">
             <label class="touch-manipulation block w-full rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-semibold text-white shadow-md active:bg-blue-700 cursor-pointer text-center">
-              <input id="beforePhotoInput" type="file" capture="environment" accept="image/*" class="hidden" onchange="onPhotoSelected('before', this)">
+              <input id="beforePhotoInput" type="file" accept="image/*" class="hidden" onchange="onPhotoSelected('before', this)">
               <span id="beforeLabel">📷 Capture BEFORE Photo</span>
             </label>
             <label class="touch-manipulation block w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3.5 text-sm font-medium text-slate-200 shadow-sm active:bg-slate-700 cursor-pointer text-center">
-              <input id="afterPhotoInput" type="file" capture="environment" accept="image/*" class="hidden" onchange="onPhotoSelected('after', this)">
+              <input id="afterPhotoInput" type="file" accept="image/*" class="hidden" onchange="onPhotoSelected('after', this)">
               <span id="afterLabel">📷 Capture AFTER Photo</span>
             </label>
             <label class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
