@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>DrainPulse Field Ops</title>
+  <script src="/vendor/tailwindcss.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { background: #0b1120; }
+    .touch-manipulation { touch-action: manipulation; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- STATE 1: LOGIN VIEW -->
+  <div id="login-view" class="flex-1 flex flex-col">
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 shadow-md">
+      <div class="max-w-md mx-auto px-4 py-3">
+        <h1 class="text-lg font-bold text-white">DrainPulse Field Ops</h1>
+        <p class="text-xs text-slate-400">Shared Device Terminal</p>
+      </div>
+    </header>
+    <main class="flex-1 max-w-md mx-auto w-full px-4 py-8 flex flex-col justify-center">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-5">
+        <div class="text-center">
+          <div class="mx-auto w-16 h-16 rounded-full bg-blue-600/20 flex items-center justify-center mb-3">
+            <div class="w-8 h-8 rounded-full bg-blue-500 ring-2 ring-blue-400/40"></div>
+          </div>
+          <h2 class="text-xl font-bold text-white">Crew Login</h2>
+          <p class="text-xs text-slate-400 mt-1">Select your unit to initialize this terminal.</p>
+        </div>
+        <div>
+          <label for="loginCrewSelect" class="block text-xs text-slate-400 mb-2">Select Crew / Unit</label>
+          <select id="loginCrewSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600">
+            <option value="" disabled selected>Loading crews...</option>
+          </select>
+        </div>
+        <div>
+          <label for="loginPassword" class="block text-xs text-slate-400 mb-2">Password</label>
+          <input id="loginPassword" type="password" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600" placeholder="Leader or shared crew password" />
+        </div>
+        <button id="loginBtn" type="button" onclick="login()" class="touch-manipulation w-full rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-3 text-sm font-bold text-white shadow active:bg-blue-700 disabled:opacity-50">Login to Terminal</button>
+        <p id="loginError" class="text-xs text-red-400 hidden"></p>
+      </div>
+    </main>
+  </div>
+
+  <!-- STATE 2: STANDBY VIEW -->
+  <div id="standby-view" class="hidden flex-1 flex flex-col">
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-md">
+      <div class="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+        <div>
+          <h1 class="text-lg font-bold text-white">DrainPulse Field Ops</h1>
+          <p id="standby-crew-name" class="text-xs text-slate-400">Crew: —</p>
+        </div>
+        <button type="button" onclick="logout()" class="text-xs text-slate-300 hover:text-white border border-slate-700 rounded px-2 py-1">Logout</button>
+      </div>
+    </header>
+    <main class="flex-1 max-w-md mx-auto w-full px-4 py-6 flex flex-col justify-center">
+      <section class="space-y-6 text-center">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-lg relative overflow-hidden">
+          <div class="flex justify-center mb-5">
+            <div class="relative w-20 h-20">
+              <div class="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping"></div>
+              <div class="relative w-20 h-20 rounded-full bg-slate-800 border-4 border-emerald-500/50 flex items-center justify-center">
+                <div class="w-9 h-9 rounded-full bg-emerald-500 ring-2 ring-emerald-400/50"></div>
+              </div>
+            </div>
+          </div>
+          <h2 class="text-2xl font-black text-white tracking-tight uppercase mb-2">NETWORK STANDBY</h2>
+          <p class="text-sm text-slate-400">All catchments clear. Awaiting Command Center dispatch.</p>
+        </div>
+        <p id="standby-unit-detail" class="text-xs text-slate-500">No active dispatch for this crew.</p>
+        <div id="leader-panel" class="hidden bg-slate-800 border border-amber-500/30 rounded-2xl p-5 text-left shadow-lg">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-sm font-bold text-amber-400">👤 Leader: <span id="leader-name">—</span></div>
+          </div>
+          <div class="space-y-2">
+            <button type="button" onclick="openRosterModal()" class="touch-manipulation w-full rounded-lg bg-slate-700 hover:bg-slate-600 px-4 py-3 text-sm font-semibold text-slate-200 shadow active:bg-slate-800">⚙️ Manage Roster</button>
+            <button type="button" onclick="openPasswordModal()" class="touch-manipulation w-full rounded-lg bg-slate-700 hover:bg-slate-600 px-4 py-3 text-sm font-semibold text-slate-200 shadow active:bg-slate-800">🔑 Set/Update Crew Password</button>
+          </div>
+        </div>
+        <button type="button" onclick="logout()" class="touch-manipulation w-full rounded-lg border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-900 active:bg-slate-800">Logout Terminal</button>
+      </section>
+    </main>
+  </div>
+
+  <!-- STATE 3: TICKET VIEW -->
+  <div id="ticket-view" class="hidden flex-1 flex flex-col">
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-md">
+      <div class="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+        <div>
+          <h1 class="text-lg font-bold text-white">DrainPulse Field Ops</h1>
+          <p id="ticket-crew-name" class="text-xs text-slate-400">Crew: —</p>
+        </div>
+        <button type="button" onclick="logout()" class="text-xs text-slate-300 hover:text-white border border-slate-700 rounded px-2 py-1">Logout</button>
+      </div>
+    </header>
+    <main class="flex-1 max-w-md mx-auto w-full px-4 py-4 space-y-4">
+      <div id="ticket-container" class="space-y-4">
+        <div class="text-slate-500 text-sm">Loading active dispatch...</div>
+      </div>
+    </main>
+    <footer class="sticky bottom-0 z-50 bg-slate-950 border-t border-slate-800 p-4">
+      <div class="max-w-md mx-auto">
+        <button id="resolveBtn" type="button" disabled onclick="resolveTicket()" class="touch-manipulation w-full rounded-xl bg-emerald-600 px-4 py-4 text-base font-bold text-white shadow-lg active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">RESOLVE & CLOSE TICKET</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Roster Management Modal -->
+  <div id="roster-modal" class="fixed inset-0 z-50 hidden flex-col items-center justify-center bg-slate-950/95 p-6 backdrop-blur-sm overflow-y-auto">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 shadow-2xl max-w-md w-full">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-bold text-white">Manage Roster</h3>
+        <button type="button" onclick="closeRosterModal()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+      </div>
+      <div id="roster-list" class="space-y-2 mb-4"></div>
+      <div class="border-t border-slate-700 pt-4">
+        <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Add Worker</h4>
+        <div class="space-y-2">
+          <input id="rosterMemberId" type="text" placeholder="Member ID" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100" />
+          <input id="rosterName" type="text" placeholder="Full name" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100" />
+          <select id="rosterRole" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100">
+            <option value="Labourer">Labourer</option>
+            <option value="Operator">Operator</option>
+            <option value="Driver">Driver</option>
+            <option value="Technician">Technician</option>
+          </select>
+          <button type="button" onclick="addRosterMember()" class="w-full rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white">+ Add Worker</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shared Password Modal -->
+  <div id="password-modal" class="fixed inset-0 z-50 hidden flex-col items-center justify-center bg-slate-950/95 p-6 backdrop-blur-sm">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl max-w-sm w-full text-center">
+      <h3 class="text-lg font-bold text-white mb-2">Crew Password</h3>
+      <p class="text-xs text-slate-400 mb-4">Set or update the shared password workers will use to log in.</p>
+      <input id="sharedPasswordInput" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-center text-lg text-slate-100 mb-2 focus:outline-none focus:ring-2 focus:ring-blue-600" placeholder="worker password" />
+      <p id="passwordError" class="text-xs text-red-400 hidden mb-3"></p>
+      <div class="flex gap-3 mt-4">
+        <button type="button" onclick="closePasswordModal()" class="flex-1 rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-800">Cancel</button>
+        <button type="button" onclick="updateSharedPassword()" class="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500">Save Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dispatch Acknowledge Modal -->
+  <div id="acknowledge-modal" class="fixed inset-0 z-[60] hidden flex-col items-center justify-center bg-red-700/90 p-6 text-center backdrop-blur-sm">
+    <div class="absolute inset-0 bg-red-500/20 animate-pulse pointer-events-none"></div>
+    <h2 class="relative z-10 text-4xl font-black text-white uppercase tracking-tight mb-2">🚨 NEW CRITICAL DISPATCH 🚨</h2>
+    <p id="acknowledge-title" class="relative z-10 text-xl font-bold text-white">—</p>
+    <p class="relative z-10 text-sm text-white/80 mt-2 mb-8">A ticket has been assigned to your unit. Acknowledge to begin.</p>
+    <button type="button" onclick="acknowledgeDispatch()" class="relative z-10 touch-manipulation w-full max-w-xs rounded-xl bg-white text-red-700 px-6 py-4 text-lg font-black uppercase shadow-2xl active:bg-slate-100">ACKNOWLEDGE</button>
+  </div>
+
+  <script>
+    const socket = io();
+    const resolveBtn = document.getElementById('resolveBtn');
+    const loginCrewSelect = document.getElementById('loginCrewSelect');
+    const loginPassword = document.getElementById('loginPassword');
+    const loginError = document.getElementById('loginError');
+    const loginView = document.getElementById('login-view');
+    const standbyView = document.getElementById('standby-view');
+    const ticketView = document.getElementById('ticket-view');
+    const ticketContainer = document.getElementById('ticket-container');
+    const standbyCrewName = document.getElementById('standby-crew-name');
+    const ticketCrewName = document.getElementById('ticket-crew-name');
+    const acknowledgeModal = document.getElementById('acknowledge-modal');
+    const acknowledgeTitle = document.getElementById('acknowledge-title');
+    const rosterModal = document.getElementById('roster-modal');
+    const rosterList = document.getElementById('roster-list');
+    const rosterMemberId = document.getElementById('rosterMemberId');
+    const rosterName = document.getElementById('rosterName');
+    const rosterRole = document.getElementById('rosterRole');
+    const passwordModal = document.getElementById('password-modal');
+    const sharedPasswordInput = document.getElementById('sharedPasswordInput');
+    const passwordError = document.getElementById('passwordError');
+
+    let crews = [];
+    let currentTicketId = null;
+    let beforePhotoName = null;
+    let afterPhotoName = null;
+    let selectedMemberId = null;
+    let selectedMemberName = null;
+    let queuedTicket = null;
+
+    function getActiveCrew() { return localStorage.getItem('activeCrew'); }
+    function setActiveCrew(name) { localStorage.setItem('activeCrew', name); }
+    function clearActiveCrew() { localStorage.removeItem('activeCrew'); }
+    function getIsLeader() { return localStorage.getItem('isLeader') === 'true'; }
+    function setIsLeader(value) { localStorage.setItem('isLeader', value ? 'true' : 'false'); }
+    function clearIsLeader() { localStorage.removeItem('isLeader'); }
+    function getLeaderName() { return localStorage.getItem('leaderName') || ''; }
+    function setLeaderName(name) { localStorage.setItem('leaderName', name); }
+    function clearLeaderName() { localStorage.removeItem('leaderName'); }
+
+    function showView(view) {
+      [loginView, standbyView, ticketView].forEach(el => el.classList.add('hidden'));
+      view.classList.remove('hidden');
+    }
+
+    async function loadCrews() {
+      try {
+        crews = await fetch('/api/v1/crews').then(r => r.json());
+        loginCrewSelect.innerHTML = '<option value="" disabled selected>Select crew / unit...</option>' + crews.map(c => `<option value="${c.loginIdentifier}">${c.crewName}</option>`).join('');
+        const def = crews.find(c => c.crewName === 'Unit 2 - Large Vacuum Truck') || crews[0];
+        if (def) loginCrewSelect.value = def.loginIdentifier;
+      } catch (e) {
+        console.error('[MOBILE] Failed to load crews', e);
+        loginCrewSelect.innerHTML = '<option value="" disabled selected>Failed to load crews</option>';
+      }
+    }
+
+    function findCrewMembers(crewName) {
+      const crew = crews.find(c => c.crewName === crewName);
+      return crew ? crew.members : [];
+    }
+
+    async function login() {
+      const loginIdentifier = loginCrewSelect.value;
+      const password = loginPassword.value.trim();
+      if (!loginIdentifier) {
+        loginError.textContent = 'Please select a crew.';
+        loginError.classList.remove('hidden');
+        return;
+      }
+      if (!password) {
+        loginError.textContent = 'Please enter the password.';
+        loginError.classList.remove('hidden');
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/crews/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ loginIdentifier, password })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          loginError.textContent = data.error || 'Login failed';
+          loginError.classList.remove('hidden');
+          return;
+        }
+        loginError.classList.add('hidden');
+        setActiveCrew(data.crew.crewName);
+        localStorage.setItem('isLeader', data.isLeader);
+        setLeaderName(data.isLeader ? (data.activeMember?.name || '') : '');
+        await init();
+      } catch (e) {
+        console.error('[MOBILE] Login failed', e);
+        loginError.textContent = 'Could not contact server. Please try again.';
+        loginError.classList.remove('hidden');
+      }
+    }
+
+    function logout() {
+      clearActiveCrew();
+      clearIsLeader();
+      clearLeaderName();
+      showLogin();
+    }
+
+    function showLogin() {
+      loginPassword.value = '';
+      loginError.classList.add('hidden');
+      showView(loginView);
+      loadCrews();
+    }
+
+    function showStandby() {
+      currentTicketId = null;
+      resolveBtn.disabled = true;
+      const crew = getActiveCrew();
+      standbyCrewName.textContent = crew ? `Crew: ${crew}` : 'Crew: —';
+      const isLeader = localStorage.getItem('isLeader') === 'true';
+      const leaderPanel = document.getElementById('leader-panel');
+      const leaderName = document.getElementById('leader-name');
+      if (leaderPanel && leaderName) {
+        if (isLeader) {
+          leaderName.textContent = getLeaderName();
+          leaderPanel.classList.remove('hidden');
+        } else {
+          leaderPanel.classList.add('hidden');
+        }
+      }
+      showView(standbyView);
+    }
+
+    function showTicketView() {
+      const crew = getActiveCrew();
+      ticketCrewName.textContent = crew ? `Crew: ${crew}` : 'Crew: —';
+      showView(ticketView);
+    }
+
+    async function init() {
+      const crew = getActiveCrew();
+      if (!crew) { showLogin(); return; }
+      await loadCrews();
+      await loadActiveTicket();
+    }
+
+    async function loadActiveTicket() {
+      const crew = getActiveCrew();
+      if (!crew) { showLogin(); return; }
+      try {
+        const res = await fetch(`/api/v1/tickets/active?crewName=${encodeURIComponent(crew)}`);
+        const { ticket, node } = await res.json();
+        if (!ticket) {
+          showStandby();
+          return;
+        }
+        currentTicketId = ticket.ticketId;
+        queuedTicket = null;
+        renderTicket(ticket, node);
+        showTicketView();
+      } catch (e) {
+        console.error('[MOBILE] Failed to load active ticket', e);
+        ticketContainer.innerHTML = '<div class="text-red-400 text-sm">Could not load active dispatch.</div>';
+        showTicketView();
+      }
+    }
+
+    function formatCoords(node) {
+      if (!node || !node.location || !node.location.coordinates) return null;
+      const [lon, lat] = node.location.coordinates;
+      return `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+    }
+
+    function getMapsUrl(node) {
+      if (!node || !node.location || !node.location.coordinates) return '#';
+      const [lon, lat] = node.location.coordinates;
+      return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+    }
+
+    function renderTicket(ticket, node) {
+      const coords = formatCoords(node);
+      const mapsUrl = getMapsUrl(node);
+      const statusClass = ticket.status === 'Dispatched'
+        ? 'bg-blue-500/10 text-blue-500 ring-blue-500/20'
+        : 'bg-red-500/10 text-red-500 ring-red-500/20';
+      const badgeText = ticket.status === 'Dispatched' ? 'DISPATCHED' : ticket.severity.toUpperCase();
+      const members = findCrewMembers(ticket.assignedCrew);
+      const memberOptions = members.length
+        ? members.map(m => `<option value="${m.memberId}" data-name="${m.name}">${m.name} — ${m.role}</option>`).join('')
+        : '<option value="" disabled>No crew members found</option>';
+      selectedMemberId = null;
+      selectedMemberName = null;
+      resolveBtn.disabled = true;
+
+      ticketContainer.innerHTML = `
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-mono text-slate-400">${ticket.ticketId}</span>
+            <span class="inline-flex items-center rounded-full ${statusClass} px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset">
+              ${badgeText}
+            </span>
+          </div>
+          <h2 class="text-base font-bold text-white mb-1">
+            ${ticket.locationName} <span class="text-slate-400 font-normal text-sm">(${ticket.nodeId})</span>
+          </h2>
+          <p class="text-xs text-slate-400 font-mono mb-3">${coords || '1.3146° S, 36.8229° E'}</p>
+          <a
+            href="${mapsUrl}"
+            target="_blank"
+            rel="noopener"
+            class="touch-manipulation inline-flex w-full items-center justify-center rounded-lg bg-slate-800 px-3 py-2.5 text-xs font-medium text-white shadow-sm active:bg-slate-700"
+          >
+            Navigate via GPS
+          </a>
+          <div class="mt-3 rounded-lg bg-red-500/5 border border-red-500/20 p-3">
+            <p class="text-xs leading-relaxed text-red-200">
+              Diagnostic: ${ticket.diagnostic || 'Routine asset inspection and clearance.'}
+            </p>
+          </div>
+          <div class="mt-3 rounded-lg bg-slate-800/50 border border-slate-700 p-3">
+            <p class="text-xs text-slate-300">
+              <span class="text-slate-500">Assigned to:</span> ${ticket.assignedCrew || '—'}
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h3 class="text-sm font-semibold text-slate-300 mb-3">Confirm Operating Member</h3>
+          <div class="space-y-3">
+            <select
+              id="memberSelect"
+              onchange="onMemberChange(this)"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              <option value="" disabled selected>Select crew member...</option>
+              ${memberOptions}
+            </select>
+          </div>
+        </section>
+
+        <section>
+          <h3 class="text-sm font-semibold text-slate-300 mb-3">Remediation Workflow</h3>
+          <div class="space-y-3">
+            <label class="touch-manipulation block w-full rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-semibold text-white shadow-md active:bg-blue-700 cursor-pointer text-center">
+              <input id="beforePhotoInput" type="file" capture="camera" accept="image/*" class="hidden" onchange="onPhotoSelected('before', this)">
+              <span id="beforeLabel">📷 Capture BEFORE Photo</span>
+            </label>
+            <label class="touch-manipulation block w-full rounded-xl bg-slate-800 border border-slate-700 px-4 py-3.5 text-sm font-medium text-slate-200 shadow-sm active:bg-slate-700 cursor-pointer text-center">
+              <input id="afterPhotoInput" type="file" capture="camera" accept="image/*" class="hidden" onchange="onPhotoSelected('after', this)">
+              <span id="afterLabel">📷 Capture AFTER Photo</span>
+            </label>
+            <label class="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
+              <input
+                id="flowRestored"
+                type="checkbox"
+                class="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500"
+              />
+              <span class="text-sm text-slate-300">Confirm culvert flow restored.</span>
+            </label>
+          </div>
+        </section>
+      `;
+    }
+
+    function onMemberChange(select) {
+      const option = select.options[select.selectedIndex];
+      selectedMemberId = select.value;
+      selectedMemberName = option ? option.dataset.name : '';
+      resolveBtn.disabled = !selectedMemberId;
+    }
+
+    function onPhotoSelected(type, input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const labelId = type === 'before' ? 'beforeLabel' : 'afterLabel';
+      if (type === 'before') beforePhotoName = file.name;
+      else afterPhotoName = file.name;
+      document.getElementById(labelId).textContent = `📷 ${file.name}`;
+    }
+
+    async function resolveTicket() {
+      if (!currentTicketId) return;
+      const flowRestored = document.getElementById('flowRestored')?.checked;
+      if (!flowRestored) {
+        window.alert('Please confirm culvert flow has been restored.');
+        return;
+      }
+      if (!selectedMemberId) {
+        window.alert('Please select the operating crew member.');
+        return;
+      }
+      const beforeInput = document.getElementById('beforePhotoInput');
+      const afterInput = document.getElementById('afterPhotoInput');
+      const beforeFile = beforeInput && beforeInput.files ? beforeInput.files[0] : null;
+      const afterFile = afterInput && afterInput.files ? afterInput.files[0] : null;
+      if (!beforeFile || !afterFile) {
+        window.alert('Please capture BEFORE and AFTER photos.');
+        return;
+      }
+      try {
+        resolveBtn.disabled = true;
+        const formData = new FormData();
+        formData.append('beforePhoto', beforeFile);
+        formData.append('afterPhoto', afterFile);
+        formData.append('resolutionNotes', 'Resolved via mobile field app');
+        formData.append('memberId', selectedMemberId);
+        formData.append('memberName', selectedMemberName || '');
+        const res = await fetch(`/api/v1/tickets/${currentTicketId}/resolve`, {
+          method: 'PATCH',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          window.alert(`Ticket ${data.ticket.ticketId} marked resolved by ${data.ticket.actionAudit?.resolvedByMemberName || 'operator'}.`);
+          showStandby();
+          setTimeout(loadActiveTicket, 500);
+        } else {
+          window.alert(data.error || 'Failed to resolve ticket');
+          resolveBtn.disabled = false;
+        }
+      } catch (e) {
+        console.error('[MOBILE] Resolve failed', e);
+        window.alert('Failed to resolve ticket');
+        resolveBtn.disabled = false;
+      }
+    }
+
+    function showDispatchAlert(ticket) {
+      const activeCrew = getActiveCrew();
+      if (ticket.assignedCrew !== activeCrew) return;
+      queuedTicket = ticket;
+      acknowledgeTitle.textContent = ticket.locationName || ticket.ticketId;
+      acknowledgeModal.classList.remove('hidden');
+      acknowledgeModal.classList.add('flex');
+    }
+
+    function acknowledgeDispatch() {
+      acknowledgeModal.classList.add('hidden');
+      acknowledgeModal.classList.remove('flex');
+      loadActiveTicket();
+    }
+
+    function getActiveCrewDoc() {
+      const active = getActiveCrew();
+      return crews.find(c => c.crewName === active);
+    }
+
+    function openRosterModal() {
+      renderRoster();
+      rosterModal.classList.remove('hidden');
+      rosterModal.classList.add('flex');
+    }
+
+    function closeRosterModal() {
+      rosterModal.classList.add('hidden');
+      rosterModal.classList.remove('flex');
+    }
+
+    function openPasswordModal() {
+      const crew = getActiveCrewDoc();
+      if (!crew) return;
+      sharedPasswordInput.value = '';
+      passwordError.classList.add('hidden');
+      passwordModal.classList.remove('hidden');
+      passwordModal.classList.add('flex');
+    }
+
+    function closePasswordModal() {
+      passwordModal.classList.add('hidden');
+      passwordModal.classList.remove('flex');
+    }
+
+    async function updateSharedPassword() {
+      const crew = getActiveCrewDoc();
+      if (!crew) return;
+      const sharedPassword = sharedPasswordInput.value.trim();
+      if (!sharedPassword) { passwordError.textContent = 'Please enter a password.'; passwordError.classList.remove('hidden'); return; }
+      try {
+        const res = await fetch(`/api/v1/crews/${crew._id}/shared-password`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sharedPassword })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) { passwordError.textContent = data.error || 'Failed to update password.'; passwordError.classList.remove('hidden'); return; }
+        closePasswordModal();
+        await loadCrews();
+        window.alert('Crew password saved. Workers can now log in with it.');
+      } catch (e) {
+        console.error('[MOBILE] Update shared password failed', e);
+        passwordError.textContent = 'Could not update password.'; passwordError.classList.remove('hidden');
+      }
+    }
+
+    function renderRoster() {
+      const crew = getActiveCrewDoc();
+      if (!crew) { rosterList.innerHTML = '<div class="text-xs text-slate-500">Crew not loaded.</div>'; return; }
+      if (!crew.members.length) { rosterList.innerHTML = '<div class="text-xs text-slate-500">No members assigned.</div>'; return; }
+      rosterList.innerHTML = crew.members.map(m => `
+        <div class="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2 border border-slate-800">
+          <div class="text-sm text-slate-200">
+            <span class="text-slate-500 text-xs">${m.memberId}</span> ${m.name} <span class="text-slate-500 text-xs">— ${m.role}</span>
+          </div>
+          <button type="button" onclick="removeRosterMember('${m.memberId}')" class="text-red-400 hover:text-red-300 text-xs font-semibold">Remove</button>
+        </div>
+      `).join('');
+    }
+
+    async function addRosterMember() {
+      const crew = getActiveCrewDoc();
+      if (!crew) return;
+      const memberId = rosterMemberId.value.trim();
+      const name = rosterName.value.trim();
+      const role = rosterRole.value;
+      if (!memberId || !name) { window.alert('Please fill in Member ID and name.'); return; }
+      try {
+        const res = await fetch(`/api/v1/crews/${crew._id}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memberId, name, role })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) { window.alert(data.error || 'Failed to add worker'); return; }
+        rosterMemberId.value = '';
+        rosterName.value = '';
+        await loadCrews();
+        renderRoster();
+        await loadActiveTicket();
+      } catch (e) {
+        console.error('[MOBILE] Add member failed', e);
+        window.alert('Failed to add worker');
+      }
+    }
+
+    async function removeRosterMember(memberId) {
+      if (!window.confirm('Remove this worker from the roster?')) return;
+      const crew = getActiveCrewDoc();
+      if (!crew) return;
+      try {
+        const res = await fetch(`/api/v1/crews/${crew._id}/members/${memberId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || !data.success) { window.alert(data.error || 'Failed to remove worker'); return; }
+        await loadCrews();
+        renderRoster();
+        await loadActiveTicket();
+      } catch (e) {
+        console.error('[MOBILE] Remove member failed', e);
+        window.alert('Failed to remove worker');
+      }
+    }
+
+    socket.on('ticket_dispatched', (ticket) => showDispatchAlert(ticket));
+    socket.on('ticket_resolved', (ticket) => {
+      if (ticket.assignedCrew === getActiveCrew() || ticket.ticketId === currentTicketId) {
+        showStandby();
+        setTimeout(loadActiveTicket, 500);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

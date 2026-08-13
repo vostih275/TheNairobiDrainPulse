@@ -1,0 +1,106 @@
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const MaintenanceTicket = require('../models/MaintenanceTicket');
+const DrainNode = require('../models/DrainNode');
+
+const UPLOAD_DIR = path.join(__dirname, '../../public/uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    cb(null, UPLOAD_DIR);
+  },
+  filename: (req, file, cb) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
+    cb(null, unique);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image uploads are allowed'));
+  }
+});
+
+const resolveUpload = (req, res, next) => {
+  if (req.is('multipart/form-data')) {
+    upload.fields([{ name: 'beforePhoto', maxCount: 1 }, { name: 'afterPhoto', maxCount: 1 }])(req, res, next);
+  } else {
+    next();
+  }
+};
+
+router.get('/', async (req, res) => {
+  try {
+    const tickets = await MaintenanceTicket.find({}).sort({ createdAt: -1 }).lean();
+    res.json(tickets);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/active', async (req, res) => {
+  try {
+    const { crewName } = req.query;
+    const query = { status: { $in: ['Pending', 'Dispatched'] } };
+    if (crewName) query.assignedCrew = crewName;
+    const ticket = await MaintenanceTicket.findOne(query).sort({ createdAt: -1 }).lean();
+    if (!ticket) return res.json({ success: true, ticket: null, node: null });
+    const node = await DrainNode.findOne({ nodeId: ticket.nodeId }).lean();
+    res.json({ success: true, ticket, node });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/:ticketId/dispatch', async (req, res) => {
+  try {
+    const assignedCrew = req.body.assignedCrew || 'Unit 4 - Vacuum Truck';
+    const ticket = await MaintenanceTicket.findOneAndUpdate(
+      { ticketId: req.params.ticketId, status: { $ne: 'Resolved' } },
+      { status: 'Dispatched', assignedCrew },
+      { new: true }
+    );
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found or already resolved' });
+    req.app.get('io').emit('ticket_dispatched', ticket);
+    res.json({ success: true, ticket });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/:ticketId/resolve', resolveUpload, async (req, res) => {
+  try {
+    const { resolutionNotes, memberId, memberName } = req.body;
+    const set = { status: 'Resolved', resolvedAt: new Date(), resolutionNotes: resolutionNotes || '' };
+    const beforeFile = req.files?.beforePhoto?.[0];
+    const afterFile = req.files?.afterPhoto?.[0];
+    if (beforeFile) set.beforePhotoUrl = '/uploads/' + beforeFile.filename;
+    else if (req.body.beforePhotoUrl) set.beforePhotoUrl = req.body.beforePhotoUrl;
+    if (afterFile) set.afterPhotoUrl = '/uploads/' + afterFile.filename;
+    else if (req.body.afterPhotoUrl) set.afterPhotoUrl = req.body.afterPhotoUrl;
+    if (memberId || memberName) {
+      set['actionAudit.resolvedByMemberId'] = memberId || '';
+      set['actionAudit.resolvedByMemberName'] = memberName || '';
+    }
+    const ticket = await MaintenanceTicket.findOneAndUpdate(
+      { ticketId: req.params.ticketId, status: { $ne: 'Resolved' } },
+      { $set: set },
+      { new: true }
+    );
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found or already resolved' });
+    req.app.get('io').emit('ticket_resolved', ticket);
+    res.json({ success: true, ticket });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;

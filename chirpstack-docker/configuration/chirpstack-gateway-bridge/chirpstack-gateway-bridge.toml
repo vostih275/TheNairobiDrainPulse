@@ -1,0 +1,33 @@
+# ChirpStack Gateway-Bridge v4 configuration for DrainPulse (EU868).
+# See https://www.chirpstack.io/docs/gateway-bridge/configuration.html
+
+# Log level.
+log_level="info"
+
+# Packet marshaler.
+# This defines how the MQTT payloads are encoded.
+# Valid options are: protobuf, json.
+[integration]
+marshaler="json"
+
+[integration.mqtt]
+# MQTT topic templates.
+event_topic_template="eu868/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
+command_topic_template="eu868/gateway/{{ .GatewayID }}/command/{{ .Command }}"
+
+  [integration.mqtt.auth.generic]
+  servers=["tcp://mosquitto:1883"]
+  username=""
+  password=""
+  qos=0
+  clean_session=false
+  client_id=""
+
+# Gateway backend configuration.
+[backend]
+# The backend type.
+type="semtech_udp"
+
+  [backend.semtech_udp]
+  # IP:port to bind the UDP packet-forwarder to.
+  udp_bind="0.0.0.0:1700"

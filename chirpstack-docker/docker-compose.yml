@@ -1,0 +1,80 @@
+services:
+  chirpstack:
+    image: chirpstack/chirpstack:4
+    container_name: chirpstack
+    restart: unless-stopped
+    command: -c /etc/chirpstack
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configuration:/etc/chirpstack
+    environment:
+      - POSTGRESQL__DSN=postgres://chirpstack:chirpstack@postgres/chirpstack?sslmode=disable
+      - REDIS__URL=redis://redis:6379
+      - MQTT__BROKER_URL=tcp://mosquitto:1883
+    depends_on:
+      - postgres
+      - redis
+      - mosquitto
+    networks:
+      - chirpstack-net
+
+  chirpstack-gateway-bridge:
+    image: chirpstack/chirpstack-gateway-bridge:4
+    container_name: chirpstack-gateway-bridge
+    restart: unless-stopped
+    command: -c /etc/chirpstack-gateway-bridge
+    ports:
+      - "1700:1700/udp"
+    volumes:
+      - ./configuration:/etc/chirpstack-gateway-bridge
+    environment:
+      - INTEGRATION__MQTT__EVENT_TOPIC_TEMPLATE=gateway/{{ .GatewayID }}/event/{{ .EventType }}
+      - INTEGRATION__MQTT__COMMAND_TOPIC_TEMPLATE=gateway/{{ .GatewayID }}/command/#
+      - INTEGRATION__MQTT__SERVER=tcp://mosquitto:1883
+    depends_on:
+      - mosquitto
+    networks:
+      - chirpstack-net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: chirpstack-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=chirpstack
+      - POSTGRES_PASSWORD=chirpstack
+      - POSTGRES_DB=chirpstack
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - chirpstack-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: chirpstack-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - chirpstack-net
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: chirpstack-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+    networks:
+      - chirpstack-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  mosquitto_data:
+
+networks:
+  chirpstack-net:
+    driver: bridge

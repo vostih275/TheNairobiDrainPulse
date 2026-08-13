@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#1e293b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <title>Nairobi Water Infrastructure & Drainage & Catchment Monitoring Engine</title>
+  <script src="/vendor/tailwindcss.min.js"></script>
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="stylesheet" href="/vendor/leaflet.css" />
+  <script src="/vendor/leaflet.js"></script>
+  <style>
+    body { background: #0b1120; }
+    .node-card { transition: all 0.3s ease; }
+    .node-card:hover { transform: translateY(-2px); }
+    .meter-bar { transition: width 0.6s ease, background-color 0.6s ease; }
+    .pulse-dot { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .status-optimal { background:#10b981; }
+    .status-maintenance { background:#f59e0b; }
+    .status-offline { background:#6b7280; }
+    .status-critical { background:#ef4444; }
+    #cityMap { height: 400px; width: 100%; border-radius: 12px; }
+    .flash { animation: flashbg 0.4s ease; }
+    @keyframes flashbg { 0%{background:#1e3a5f} 100%{background:#1e293b} }
+    .toast-card { transition: all 0.4s ease; transform: translateX(120%); opacity: 0; }
+    .toast-card.show { transform: translateX(0); opacity: 1; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background:#1e293b; } ::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen font-mono">
+
+  <!-- Header -->
+  <header class="border-b border-slate-700 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <img src="images/drainpulse-logo.svg" alt="DrainPulse" class="h-9 w-auto" />
+        <div>
+          <h1 class="text-lg font-bold text-white tracking-wide">Nairobi Water Infrastructure & Drainage & Catchment Monitoring Engine</h1>
+          <p class="text-xs text-slate-400">Official City Drainage & Catchment Monitoring System</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button type="button" onclick="openCrewAdminModal()" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition">Crew &amp; Unit Mgmt</button>
+        <button id="audio-toggle" type="button" onclick="enableAudio()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5">
+          <span id="audio-toggle-icon">&#128263;</span>
+          <span id="audio-toggle-text">Enable Audio Alerts</span>
+        </button>
+        <div id="ws-status" class="flex items-center gap-2 text-xs text-red-400">
+          <span class="w-2 h-2 rounded-full bg-red-400 pulse-dot"></span> Connecting...
+        </div>
+        <div class="text-xs text-slate-400" id="last-update">—</div>
+      </div>
+    </div>
+  </header>
+
+  <div id="dispatch-toast" class="fixed top-4 right-4 z-50 w-80 max-w-[90vw] flex flex-col gap-2"></div>
+
+  <div class="max-w-screen-2xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <p class="text-xs text-slate-400 mb-1">Total Monitored Wards</p>
+        <p class="text-3xl font-bold text-blue-400" id="stat-wards">—</p>
+      </div>
+      <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <p class="text-xs text-slate-400 mb-1">Active Drain Nodes</p>
+        <p class="text-3xl font-bold text-white" id="stat-total">—</p>
+      </div>
+      <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <p class="text-xs text-slate-400 mb-1">System Health Index</p>
+        <p class="text-3xl font-bold text-emerald-400" id="stat-health">—</p>
+      </div>
+      <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <p class="text-xs text-slate-400 mb-1">Active Catchment Stress Alerts</p>
+        <p class="text-3xl font-bold text-red-400" id="stat-alerts">—</p>
+      </div>
+    </div>
+
+    <!-- Administrative Filter & Simulator Controls -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
+        <h2 class="text-sm font-semibold text-slate-300 mb-3">&#128197; Administrative Filter</h2>
+        <div class="flex flex-wrap gap-3">
+          <select id="countyFilter" onchange="onCountyChange(this.value)" class="bg-slate-700 text-slate-200 text-sm rounded-lg px-4 py-2 border border-slate-600 focus:outline-none">
+            <option value="">All Counties</option>
+            <option value="Nairobi">Nairobi</option>
+          </select>
+          <select id="subCountyFilter" onchange="onSubCountyChange(this.value)" class="bg-slate-700 text-slate-200 text-sm rounded-lg px-4 py-2 border border-slate-600 focus:outline-none" disabled>
+            <option value="">All Sub-Counties</option>
+          </select>
+          <select id="wardFilter" onchange="applyFilters()" class="bg-slate-700 text-slate-200 text-sm rounded-lg px-4 py-2 border border-slate-600 focus:outline-none" disabled>
+            <option value="">All Wards</option>
+          </select>
+        </div>
+      </div>
+      <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
+        <h2 class="text-sm font-semibold text-slate-300 mb-3">&#9881; Simulator Controls</h2>
+        <div class="flex flex-wrap items-center gap-3">
+          <button onclick="triggerSim('DRY')" class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold transition">&#9728; DRY</button>
+          <button onclick="triggerSim('STEADY_RAIN')" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition">&#127783; STEADY RAIN</button>
+          <button onclick="triggerSim('FLASH_FLOOD')" class="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white text-xs font-semibold transition">&#9889; FLASH FLOOD</button>
+          <button onclick="stopSim()" class="px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 text-white text-xs font-semibold transition">&#9632; Stop</button>
+          <span id="sim-status" class="text-xs text-slate-400 ml-2">Idle</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive Map -->
+    <div>
+      <h2 class="text-sm font-semibold text-slate-300 mb-3">&#128205; Nairobi Real-Time Asset Visibility</h2>
+      <div id="cityMap" class="border border-slate-700"></div>
+    </div>
+
+    <!-- Active Infrastructure Predictions -->
+    <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
+      <h2 class="text-sm font-semibold text-slate-300 mb-3">&#127775; Active Infrastructure Predictions</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left text-slate-300">
+          <thead class="text-slate-400 border-b border-slate-600">
+            <tr>
+              <th class="pb-2 pr-4">Node</th>
+              <th class="pb-2 pr-4">Sub-County</th>
+              <th class="pb-2 pr-4">Current Rain (mm/hr)</th>
+              <th class="pb-2 pr-4">Predicted Drain Rise (mm/min)</th>
+              <th class="pb-2">Risk</th>
+            </tr>
+          </thead>
+          <tbody id="predictions-list"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Node Grid -->
+    <div>
+      <h2 class="text-sm font-semibold text-slate-300 mb-3">&#128205; Live Node Status</h2>
+      <div id="node-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div class="text-slate-500 text-sm col-span-full">Loading nodes...</div>
+      </div>
+    </div>
+
+    <!-- Chart + Tickets Side by Side -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- Chart Panel -->
+      <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-slate-300">&#128200; Catchment Saturation (%) History</h2>
+          <select id="chart-node-select" onchange="loadChart(this.value)" class="bg-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1 border border-slate-600 focus:outline-none">
+            <option value="">Select a node...</option>
+          </select>
+        </div>
+        <canvas id="waterChart" height="180"></canvas>
+      </div>
+
+      <!-- Maintenance Tickets -->
+      <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
+        <h2 class="text-sm font-semibold text-slate-300 mb-3">&#128221; Maintenance Tickets</h2>
+        <div id="ticket-list" class="space-y-2 max-h-72 overflow-y-auto">
+          <div class="text-slate-500 text-xs">No tickets yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Event Log -->
+    <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
+      <h2 class="text-sm font-semibold text-slate-300 mb-3">&#128196; Live Event Log</h2>
+      <div id="event-log" class="font-mono text-xs space-y-1 max-h-48 overflow-y-auto text-slate-400">
+        <div>Waiting for events...</div>
+      </div>
+    </div>
+
+    <!-- Field Operations -->
+    <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 class="text-sm font-semibold text-slate-300">&#128188; Field Operations</h2>
+        <div class="flex items-center gap-2">
+          <a href="/api/v1/reports/latest" target="_blank" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold transition">Download Report</a>
+          <button onclick="loadFieldOps()" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition">Refresh</button>
+        </div>
+      </div>
+      <div id="field-ops-list" class="space-y-3 max-h-96 overflow-y-auto">
+        <div class="text-slate-500 text-xs">Loading tickets...</div>
+      </div>
+      <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide mt-5 mb-2">Resolved Today</h3>
+      <div id="resolved-ops-list" class="space-y-3 max-h-72 overflow-y-auto">
+        <div class="text-slate-500 text-xs">Loading resolved tickets...</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const socket = io();
+  const nodeData = {};
+  const predictiveRisk = {};
+  let map = null;
+  let markers = {};
+  let chart = null;
+  let chartNodeId = null;
+  const chartLabels = [];
+  const chartValues = [];
+  let allNodesCache = [];
+  const activeHighTickets = new Set();
+
+  socket.on('connect', () => {
+    document.getElementById('ws-status').innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span class="text-emerald-400">Live</span>';
+  });
+  socket.on('disconnect', () => {
+    document.getElementById('ws-status').innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400 pulse-dot"></span> <span class="text-red-400">Disconnected</span>';
+  });
+
+  socket.on('telemetry_update', (data) => {
+    nodeData[data.nodeId] = data;
+    if (data.predictiveRisk) predictiveRisk[data.nodeId] = data.predictiveRisk;
+    updateNodeCard(data);
+    updateMapMarker(data);
+    updateStats();
+    const rain = data.rainRateMmHr !== undefined ? data.rainRateMmHr : '—';
+    logEvent(`${data.nodeId} (${data.locationName}): Telemetry tick — Fill Level ${data.fillLevel}%, Rain ${rain} mm/hr`);
+    document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    if (chartNodeId === data.nodeId) appendChartPoint(data);
+  });
+
+  socket.on('new_ticket', (ticket) => {
+    prependTicket(ticket);
+    if (ticket.severity === 'High' && ['Pending', 'Assigned'].includes(ticket.status)) {
+      activeHighTickets.add(ticket.nodeId);
+      updateMarkerColors();
+    }
+    loadFieldOps();
+    logEvent(`&#128680; NEW TICKET ${ticket.ticketId} | ${ticket.locationName} | ${ticket.severity} | ${ticket.status}`);
+    showDispatchAlert(ticket.ticketId, ticket.locationName, ticket.severity);
+    playAlertSound();
+    speakAlert(`New field operation. Ticket ${ticket.ticketId} at ${ticket.locationName}. Priority ${ticket.severity}.`);
+    updateStats();
+  });
+
+  socket.on('predictiveAlert', (alert) => {
+    logEvent(`&#128680; PREDICTIVE ALERT ${alert.nodeId} | ${alert.locationName} | ${alert.riskStatus} | ~${alert.predictedMinutesToOverflow} min to overflow`);
+    updateStats();
+  });
+
+  socket.on('ticket_dispatched', (ticket) => {
+    logEvent(`DISPATCHED ${ticket.ticketId} to ${ticket.assignedCrew} at ${ticket.locationName}`);
+    showDispatchAlert(ticket.ticketId, ticket.locationName, ticket.severity);
+    playAlertSound();
+    speakAlert(`Dispatch. Ticket ${ticket.ticketId} at ${ticket.locationName} assigned to ${ticket.assignedCrew}. Priority ${ticket.severity}.`);
+    if (ticket.severity === 'High') activeHighTickets.add(ticket.nodeId);
+    loadFieldOps();
+    loadTickets();
+    updateMarkerColors();
+  });
+
+  socket.on('ticket_resolved', (ticket) => {
+    logEvent(`RESOLVED ${ticket.ticketId} at ${ticket.locationName}`);
+    activeHighTickets.delete(ticket.nodeId);
+    loadFieldOps();
+    loadTickets();
+    loadResolvedTickets();
+    updateMarkerColors();
+  });
+
+  function initMap() {
+    map = L.map('cityMap').setView([-1.2921, 36.8219], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+  }
+
+  function getRiskColor(riskStatus, score) {
+    const risk = (riskStatus || '');
+    if (risk === 'CRITICAL_IMPENDING') return '#ef4444';
+    if (risk === 'ELEVATED') return '#f59e0b';
+    if (score < 40) return '#ef4444';
+    if (score < 70) return '#f59e0b';
+    return '#3b82f6';
+  }
+
+  function getMarkerColor(nodeId) {
+    return activeHighTickets.has(nodeId) ? '#ef4444' : '#22c55e';
+  }
+
+  function getMarkerClass(nodeId) {
+    return activeHighTickets.has(nodeId) ? 'pulse-dot' : '';
+  }
+
+  function getPopupContent(node, data) {
+    const score = data?.drainHealthScore ?? 100;
+    const risk = data?.predictiveRisk || predictiveRisk[node.nodeId] || {};
+    const color = getRiskColor(risk.riskStatus, score);
+    const elevation = node.elevationMeters || data?.elevationMeters || '—';
+    const rainfall = risk.rainfallRateMmHr !== undefined ? `${risk.rainfallRateMmHr} mm/hr` : '—';
+    const overflow = risk.predictedMinutesToOverflow !== undefined && risk.predictedMinutesToOverflow !== null ? `${risk.predictedMinutesToOverflow} min` : '—';
+    const riskLabel = risk.riskStatus === 'NORMAL' ? 'Baseline' : (risk.riskStatus || 'Baseline');
+    const riskColorClass = riskLabel === 'CRITICAL_IMPENDING' ? 'text-red-500' : riskLabel === 'ELEVATED' ? 'text-amber-500' : 'text-blue-500';
+
+    return `
+      <div class="text-sm">
+        <strong>${node.locationName}</strong><br>
+        <span class="text-slate-600">Sub-County:</span> ${node.subCounty}<br>
+        <span class="text-slate-600">Ward:</span> ${node.ward} Ward Infrastructure Node<br>
+        <span class="text-slate-600">Elevation:</span> ${elevation}m ASL<br>
+        <span class="text-slate-600">Health Score:</span> <span style="color:${color}; font-weight:bold">${score}</span><br>
+        <span class="text-slate-600">Rainfall Impact:</span> ${rainfall}<br>
+        <span class="text-slate-600">Risk:</span> <span class="${riskColorClass} font-bold">${riskLabel}</span><br>
+        <span class="text-slate-600">Time to Overflow:</span> ${overflow}<br>
+        <span class="text-slate-600">Water Depth:</span> ${data?.waterDepth ?? nodeData[node.nodeId]?.waterDepth ?? 0}mm
+      </div>
+    `;
+  }
+
+  function createMarker(node) {
+    const [lng, lat] = node.location?.coordinates || [36.8219, -1.2921];
+    const high = activeHighTickets.has(node.nodeId);
+    const marker = L.circleMarker([lat, lng], {
+      radius: high ? 14 : 10,
+      fillColor: getMarkerColor(node.nodeId),
+      color: '#ffffff',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.8,
+      className: getMarkerClass(node.nodeId)
+    });
+
+    marker.bindPopup(getPopupContent(node, { drainHealthScore: node.drainHealthScore || 100 }));
+    return marker;
+  }
+
+  function updateMarkerColors() {
+    for (const [nodeId, marker] of Object.entries(markers)) {
+      const high = activeHighTickets.has(nodeId);
+      marker.setStyle({ fillColor: getMarkerColor(nodeId), radius: high ? 14 : 10 });
+      const el = marker.getElement();
+      if (el) {
+        if (high) el.classList.add('pulse-dot');
+        else el.classList.remove('pulse-dot');
+      }
+    }
+  }
+
+  function updateMapMarker(data) {
+    if (!map || !markers[data.nodeId]) return;
+    const marker = markers[data.nodeId];
+    marker.setPopupContent(getPopupContent(data, data));
+  }
+
+  async function init() {
+    initMap();
+    await loadCrews();
+    await loadTickets();     // populate activeHighTickets before markers are created
+    await loadNodes();
+    await loadPredictions();
+    await loadFieldOps();
+    await loadResolvedTickets();
+  }
+
+  function buildFilterUrl() {
+    const county = document.getElementById('countyFilter').value;
+    const subCounty = document.getElementById('subCountyFilter').value;
+    const ward = document.getElementById('wardFilter').value;
+    const params = new URLSearchParams();
+    if (county) params.append('county', county);
+    if (subCounty) params.append('subCounty', subCounty);
+    if (ward) params.append('ward', ward);
+    const query = params.toString();
+    return query ? `/api/v1/nodes?${query}` : '/api/v1/nodes';
+  }
+
+  async function loadNodes() {
+    const url = buildFilterUrl();
+    const nodes = await fetch(url).then(r => r.json());
+    allNodesCache = nodes;
+
+    document.getElementById('stat-total').textContent = nodes.length;
+    const uniqueWards = [...new Set(nodes.map(n => n.ward))];
+    document.getElementById('stat-wards').textContent = uniqueWards.length;
+
+    const grid = document.getElementById('node-grid');
+    grid.innerHTML = '';
+    const sel = document.getElementById('chart-node-select');
+    sel.innerHTML = '<option value="">Select a node...</option>';
+
+    Object.values(markers).forEach(m => map.removeLayer(m));
+    markers = {};
+
+    for (const node of nodes) {
+      nodeData[node.nodeId] = node;
+
+      try {
+        const riskRes = await fetch(`/api/v1/nodes/${node.nodeId}/predictive-risk`).then(r => r.json());
+        if (riskRes && !riskRes.error) predictiveRisk[node.nodeId] = riskRes;
+      } catch (e) {
+        predictiveRisk[node.nodeId] = {};
+      }
+
+      grid.appendChild(buildNodeCard(node));
+      sel.innerHTML += `<option value="${node.nodeId}">${node.nodeId} — ${node.locationName}</option>`;
+
+      const marker = createMarker(node);
+      marker.addTo(map);
+      markers[node.nodeId] = marker;
+    }
+
+    if (nodes.length > 0) {
+      const bounds = L.latLngBounds(nodes.map(n => {
+        const [nlng, nlat] = n.location?.coordinates || [36.8219, -1.2921];
+        return [nlat, nlng];
+      }));
+      map.fitBounds(bounds, { padding: [50, 50] });
+    } else {
+      map.setView([-1.2921, 36.8219], 12);
+    }
+
+    populateFilterOptions();
+    updateStats();
+  }
+
+  async function loadTickets() {
+    const tickets = await fetch('/api/v1/tickets').then(r => r.json());
+    const ticketList = document.getElementById('ticket-list');
+    ticketList.innerHTML = '';
+    activeHighTickets.clear();
+    if (tickets.length === 0) {
+      ticketList.innerHTML = '<div class="text-slate-500 text-xs">No tickets yet.</div>';
+    } else {
+      tickets.forEach(t => {
+        ticketList.appendChild(buildTicketEl(t));
+        if (t.severity === 'High' && ['Pending', 'Assigned', 'Dispatched'].includes(t.status)) {
+          activeHighTickets.add(t.nodeId);
+        }
+      });
+    }
+    updateMarkerColors();
+    updateStats();
+  }
+
+  async function loadPredictions() {
+    try {
+      const preds = await fetch('/api/v1/predictions').then(r => r.json());
+      const tbody = document.getElementById('predictions-list');
+      if (!Array.isArray(preds) || preds.length === 0) {
+        tbody.innerHTML = '<tr><td class="text-slate-500 text-xs py-2" colspan="5">No predictions available.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = preds.map(p => {
+        const rise = typeof p.runoffInflowMmPerMin === 'number' ? p.runoffInflowMmPerMin.toFixed(2) : '—';
+        const riskLabel = p.riskStatus === 'NORMAL' ? 'Baseline' : (p.riskStatus || 'Baseline').replace(/_/g, ' ');
+        const riskClass = p.riskStatus === 'CRITICAL_IMPENDING' ? 'bg-red-500/20 text-red-300 ring-red-500/30 animate-pulse' : p.riskStatus === 'ELEVATED' ? 'bg-amber-500/20 text-amber-300 ring-amber-500/30' : 'bg-blue-500/20 text-blue-300 ring-blue-500/30';
+        return `
+          <tr class="border-b border-slate-700/50">
+            <td class="py-2 pr-4">${p.nodeId} — ${p.locationName}</td>
+            <td class="py-2 pr-4">${p.subCounty}</td>
+            <td class="py-2 pr-4">${p.rainfallRateMmHr !== undefined ? p.rainfallRateMmHr : '—'}</td>
+            <td class="py-2 pr-4">${rise}</td>
+            <td class="py-2"><span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${riskClass}">${riskLabel}</span></td>
+          </tr>
+        `;
+      }).join('');
+    } catch (e) {
+      console.error('[PREDICTIONS UI] Failed to load', e);
+    }
+  }
+
+  async function loadResolvedTickets() {
+    try {
+      const tickets = await fetch('/api/v1/tickets').then(r => r.json());
+      const resolved = tickets.filter(t => t.status === 'Resolved');
+      const list = document.getElementById('resolved-ops-list');
+      if (resolved.length === 0) {
+        list.innerHTML = '<div class="text-slate-500 text-xs">No resolved tickets yet.</div>';
+        return;
+      }
+      list.innerHTML = resolved.map(t => `
+        <div class="bg-slate-900 rounded-lg p-3 border border-slate-700">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-900 text-emerald-300">Resolved</span>
+                <span class="text-xs text-slate-400">${t.ticketId}</span>
+              </div>
+              <div class="text-sm font-semibold mt-1 truncate">${t.locationName}</div>
+              <div class="text-xs text-slate-400 truncate">Crew: ${t.assignedCrew || '—'} · Resolved by: ${t.actionAudit?.resolvedByMemberName || '—'}</div>
+            </div>
+            <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+              <button onclick="openProofModal('${t.ticketId}')" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold whitespace-nowrap">&#128247; View Proof of Work</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      console.error('[RESOLVED OPS] Failed to load', e);
+    }
+  }
+
+  let currentProofTicketId = null;
+
+  async function openProofModal(ticketId) {
+    try {
+      const tickets = await fetch('/api/v1/tickets').then(r => r.json());
+      const ticket = tickets.find(t => t.ticketId === ticketId);
+      if (!ticket) return;
+      currentProofTicketId = ticketId;
+      document.getElementById('proofTicketId').textContent = ticket.ticketId;
+      document.getElementById('proofLocation').textContent = ticket.locationName;
+      document.getElementById('proofResolvedBy').textContent = ticket.actionAudit?.resolvedByMemberName || '—';
+      const beforeImg = document.getElementById('proofBefore');
+      const beforePlaceholder = document.getElementById('proofBeforePlaceholder');
+      beforeImg.src = ticket.beforePhotoUrl || '';
+      beforeImg.classList.toggle('hidden', !ticket.beforePhotoUrl);
+      beforePlaceholder.classList.toggle('hidden', !!ticket.beforePhotoUrl);
+      const afterImg = document.getElementById('proofAfter');
+      const afterPlaceholder = document.getElementById('proofAfterPlaceholder');
+      afterImg.src = ticket.afterPhotoUrl || '';
+      afterImg.classList.toggle('hidden', !ticket.afterPhotoUrl);
+      afterPlaceholder.classList.toggle('hidden', !!ticket.afterPhotoUrl);
+      document.getElementById('proofModal').classList.remove('hidden');
+    } catch (e) {
+      console.error('[PROOF] Failed to open', e);
+    }
+  }
+
+  function closeProofModal() {
+    currentProofTicketId = null;
+    document.getElementById('proofModal').classList.add('hidden');
+  }
+
+  async function loadFieldOps() {
+    try {
+      const tickets = await fetch('/api/v1/tickets').then(r => r.json());
+      const list = document.getElementById('field-ops-list');
+      const open = tickets.filter(t => t.status !== 'Resolved');
+      window.fieldOpsTickets = open;
+      if (open.length === 0) {
+        list.innerHTML = '<div class="text-slate-500 text-xs">No open tickets.</div>';
+        return;
+      }
+      list.innerHTML = open.map(t => {
+        const statusClass = t.status === 'Dispatched' ? 'bg-blue-900/50 text-blue-300 ring-1 ring-blue-700/30' :
+                            t.status === 'Assigned' ? 'bg-amber-900/50 text-amber-300 ring-1 ring-amber-700/30' :
+                            'bg-slate-800 text-slate-400 ring-1 ring-slate-700';
+        return `
+        <div class="bg-slate-900 rounded-lg p-3 border border-slate-700">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${t.severity === 'High' ? 'bg-red-900 text-red-300' : t.severity === 'Medium' ? 'bg-amber-900 text-amber-300' : 'bg-blue-900 text-blue-300'}">${t.severity}</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${statusClass}">${t.status}</span>
+                <span class="text-xs text-slate-400">${t.ticketId}</span>
+              </div>
+              <div class="text-sm font-semibold mt-1 truncate">${t.locationName}</div>
+              <div class="text-xs text-slate-400 truncate">Node: ${t.nodeId} · Crew: ${t.assignedCrew || '—'} · ${t.notes || 'No notes'}</div>
+            </div>
+            <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+              ${t.status === 'Pending' ? `<button onclick="openDispatchModal('${t.ticketId}')" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold whitespace-nowrap">Dispatch Crew</button>` : ''}
+              ${(t.status === 'Dispatched' || t.status === 'Assigned') ? `<button onclick="resolveTicket('${t.ticketId}')" class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold whitespace-nowrap">Resolve</button>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+      }).join('');
+    } catch (e) {
+      console.error('[FIELD OPS] Failed to load', e);
+    }
+  }
+
+  let currentDispatchTicketId = null;
+  let crewsCache = [];
+
+  async function loadCrews() {
+    try {
+      crewsCache = await fetch('/api/v1/crews').then(r => r.json());
+    } catch (e) {
+      console.error('[CREWS] Failed to load', e);
+      crewsCache = [];
+    }
+  }
+
+    async function openCrewAdminModal() {
+    document.getElementById('crewAdminModal').classList.remove('hidden');
+    await loadAdminCrews();
+  }
+
+  function closeCrewAdminModal() {
+    document.getElementById('crewAdminModal').classList.add('hidden');
+  }
+
+  async function loadAdminCrews() {
+    try {
+      const crews = await fetch('/api/v1/crews').then(r => r.json());
+      renderAdminCrews(crews);
+    } catch (e) {
+      console.error('[ADMIN CREWS] Failed to load', e);
+    }
+  }
+
+  function renderAdminCrews(crews) {
+    const list = document.getElementById('adminCrewList');
+    if (!crews.length) {
+      list.innerHTML = '<div class="text-slate-500 text-xs">No crews registered.</div>';
+      return;
+    }
+    list.innerHTML = crews.map(c => `
+      <div class="bg-slate-950 border border-slate-700 rounded-xl p-4">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div class="font-semibold text-white text-sm">${c.crewName}</div>
+            <div class="text-xs text-slate-400 font-mono">${c.loginIdentifier}</div>
+          </div>
+          <button onclick="deleteCrew('${c._id}')" class="px-3 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 text-white text-xs font-semibold">Delete Unit</button>
+        </div>
+        <div class="mt-3 pl-3 border-l-2 border-slate-700 space-y-1">
+          ${c.members.length ? c.members.map(m => `<div class="text-xs text-slate-300"><span class="text-slate-500">${m.memberId}</span> ${m.name} — <span class="text-slate-500">${m.role}</span></div>`).join('') : '<div class="text-xs text-slate-500">No members assigned.</div>'}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function addCrew() {
+    const crewName = document.getElementById('adminCrewName').value.trim();
+    const loginIdentifier = document.getElementById('adminCrewLogin').value.trim();
+    const leaderName = document.getElementById('adminLeaderName').value.trim();
+    const leaderPassword = document.getElementById('adminLeaderPassword').value.trim();
+    if (!crewName || !loginIdentifier || !leaderName || !leaderPassword) { alert('Please fill in crew name, login ID, leader name, and leader password'); return; }
+    try {
+      const res = await fetch('/api/v1/crews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ crewName, loginIdentifier, leaderName, leaderPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Failed to add crew'); return; }
+      document.getElementById('adminCrewName').value = '';
+      document.getElementById('adminCrewLogin').value = '';
+      document.getElementById('adminLeaderName').value = '';
+      document.getElementById('adminLeaderPassword').value = '';
+      await loadAdminCrews();
+      await loadCrews();
+    } catch (e) {
+      console.error('[ADMIN CREWS] Add failed', e);
+      alert('Failed to add crew');
+    }
+  }
+
+  async function deleteCrew(id) {
+    if (!confirm('Delete this crew/unit?')) return;
+    try {
+      const res = await fetch(`/api/v1/crews/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) { await loadAdminCrews(); await loadCrews(); }
+      else { alert(data.error || 'Failed to delete crew'); }
+    } catch (e) {
+      console.error('[ADMIN CREWS] Delete failed', e);
+      alert('Failed to delete crew');
+    }
+  }
+
+function openDispatchModal(ticketId) {
+    const ticket = window.fieldOpsTickets?.find(t => t.ticketId === ticketId);
+    if (!ticket) return;
+    currentDispatchTicketId = ticketId;
+    document.getElementById('modalTicketId').textContent = ticket.ticketId;
+    document.getElementById('modalDiagnostic').textContent = ticket.notes || 'No diagnostic available.';
+
+    const crewSelect = document.getElementById('crewSelect');
+    crewSelect.innerHTML = crewsCache.map(c => `<option value="${c.crewName}">${c.crewName}</option>`).join('');
+    const defaultCrew = crewsCache.find(c => c.crewName === 'Unit 4 - Vacuum/Jetting Combo') || crewsCache[0];
+    if (defaultCrew) crewSelect.value = defaultCrew.crewName;
+
+    document.getElementById('dispatchModal').classList.remove('hidden');
+  }
+
+  function closeDispatchModal() {
+    currentDispatchTicketId = null;
+    document.getElementById('dispatchModal').classList.add('hidden');
+  }
+
+  async function finalizeDispatch() {
+    if (!currentDispatchTicketId) return;
+    const assignedCrew = document.getElementById('crewSelect').value;
+    try {
+      const res = await fetch(`/api/v1/tickets/${currentDispatchTicketId}/dispatch`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignedCrew })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        logEvent(`DISPATCHED ${data.ticket.ticketId} to ${data.ticket.assignedCrew}`);
+        closeDispatchModal();
+        await loadFieldOps();
+        await loadTickets();
+      } else {
+        alert(data.error || 'Failed to dispatch ticket');
+      }
+    } catch (e) {
+      console.error('[FIELD OPS] Dispatch failed', e);
+      alert('Failed to dispatch ticket');
+    }
+  }
+
+  async function resolveTicket(ticketId) {
+    const note = prompt(`Resolution notes for ${ticketId}:`);
+    if (note === null) return;
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticketId}/resolve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolutionNotes: note })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        logEvent(`&#9989; Resolved ${data.ticketId} at ${data.locationName}: ${note}`);
+        await loadFieldOps();
+        await loadTickets();
+      } else {
+        alert(data.error || 'Failed to resolve ticket');
+      }
+    } catch (e) {
+      console.error('[FIELD OPS] Resolve failed', e);
+      alert('Failed to resolve ticket');
+    }
+  }
+
+  function populateFilterOptions() {
+    const county = document.getElementById('countyFilter').value;
+    const subCounty = document.getElementById('subCountyFilter').value;
+
+    const counties = [...new Set(allNodesCache.map(n => n.county))];
+    const subCounties = [...new Set(allNodesCache.filter(n => !county || n.county === county).map(n => n.subCounty))];
+    const wards = [...new Set(allNodesCache.filter(n => (!county || n.county === county) && (!subCounty || n.subCounty === subCounty)).map(n => n.ward))];
+
+    fillSelect('subCountyFilter', subCounties, subCounty);
+    fillSelect('wardFilter', wards, document.getElementById('wardFilter').value);
+
+    document.getElementById('subCountyFilter').disabled = !county && counties.length <= 1;
+    document.getElementById('wardFilter').disabled = !subCounty;
+  }
+
+  function fillSelect(id, options, selected) {
+    const sel = document.getElementById(id);
+    const firstLabel = sel.firstElementChild?.textContent || '';
+    const labelPrefix = firstLabel.replace('All ', '').replace('...', '').replace(/\s$/, '') || 'Item';
+    sel.innerHTML = `<option value="">All ${labelPrefix}s</option>`;
+    options.forEach(opt => {
+      const option = document.createElement('option');
+      option.value = opt;
+      option.textContent = opt;
+      if (opt === selected) option.selected = true;
+      sel.appendChild(option);
+    });
+  }
+
+  async function onCountyChange(county) {
+    document.getElementById('subCountyFilter').value = '';
+    document.getElementById('wardFilter').value = '';
+    populateFilterOptions();
+    await loadNodes();
+    logEvent(`&#128197; Filtered by county: ${county || 'All'}`);
+  }
+
+  async function onSubCountyChange(subCounty) {
+    document.getElementById('wardFilter').value = '';
+    populateFilterOptions();
+    await loadNodes();
+    logEvent(`&#128197; Filtered by sub-county: ${subCounty || 'All'}`);
+  }
+
+  async function applyFilters() {
+    await loadNodes();
+    const ward = document.getElementById('wardFilter').value;
+    logEvent(`&#128197; Filtered by ward: ${ward || 'All'}`);
+  }
+
+  function buildNodeCard(node) {
+    const div = document.createElement('div');
+    div.id = `card-${node.nodeId}`;
+    div.className = 'node-card bg-slate-900 rounded-xl p-5 border border-slate-700 cursor-pointer';
+    div.onclick = () => { document.getElementById('chart-node-select').value = node.nodeId; loadChart(node.nodeId); };
+    div.innerHTML = renderCardInner(node, 0, 0);
+    return div;
+  }
+
+  function renderCardInner(node, waterDepth, score) {
+    const fillPct = node.fillLevel !== undefined
+      ? node.fillLevel
+      : (node.emptyDistanceMm ? Math.min(100, Math.round((waterDepth / node.emptyDistanceMm) * 100)) : 0);
+    const health = node.health !== undefined ? node.health : score;
+    const depth = node.depth !== undefined ? node.depth : waterDepth;
+    const battery = node.battery !== undefined ? node.battery : null;
+    const statusColor = node.status === 'Optimal' ? 'text-emerald-400' : node.status === 'Maintenance Required' ? 'text-amber-400' : 'text-slate-400';
+    const dotClass = node.status === 'Optimal' ? 'status-optimal' : node.status === 'Maintenance Required' ? 'status-maintenance' : 'status-offline';
+    const barColor = fillPct > 75 ? 'bg-red-500' : fillPct > 45 ? 'bg-amber-400' : 'bg-emerald-500';
+    const scoreColor = health < 40 ? 'text-red-400' : health < 70 ? 'text-amber-400' : 'text-emerald-400';
+
+    const risk = predictiveRisk[node.nodeId] || {};
+    const riskLabel = risk.riskStatus === 'NORMAL' ? 'Baseline' : (risk.riskStatus || 'Baseline');
+    const overflowMins = risk.predictedMinutesToOverflow;
+    const rainRate = risk.rainfallRateMmHr;
+    let riskText;
+    if (overflowMins <= 0) {
+      riskText = '🔴 Immediate Overflow Risk';
+    } else if (riskLabel === 'CRITICAL_IMPENDING') {
+      riskText = `⚠️ Impending Overflow in ${overflowMins} Mins (${rainRate} mm/hr Rain)`;
+    } else if (riskLabel === 'ELEVATED') {
+      riskText = `⚡ Overflow possible in ${overflowMins} Mins (${rainRate} mm/hr Rain)`;
+    } else {
+      riskText = '✓ Baseline';
+    }
+    const riskBannerColor = riskLabel === 'CRITICAL_IMPENDING' ? 'bg-red-900/40 text-red-300' : riskLabel === 'ELEVATED' ? 'bg-amber-900/40 text-amber-300' : 'bg-blue-900/40 text-blue-300';
+
+    return `
+      <div class="flex items-start justify-between mb-3">
+        <div> 
+          <p class="text-xs text-slate-400">${node.nodeId}</p>
+          <p class="text-sm font-semibold text-white leading-tight">${node.locationName}</p>
+          <p class="text-xs text-slate-500 mt-0.5">${node.subCounty} | ${node.ward} Ward Infrastructure Node</p>
+          <p class="text-xs text-slate-600">${node.elevationMeters}m ASL • ${(node.location?.coordinates?.[1])?.toFixed(4) || '—'}, ${(node.location?.coordinates?.[0])?.toFixed(4) || '—'}</p>
+        </div>
+        <div class="flex items-center gap-1.5 mt-1">
+          <span class="w-2.5 h-2.5 rounded-full ${dotClass}"></span>
+          <span class="text-xs ${statusColor}">${node.status || 'Optimal'}</span>
+        </div>
+      </div>
+      <div class="mb-3">
+        <div class="flex justify-between text-xs text-slate-400 mb-1">
+          <span>Fill Level</span><span>${fillPct}%</span>
+        </div>
+        <div class="h-3 bg-slate-700 rounded-full overflow-hidden">
+          <div class="meter-bar h-full rounded-full ${barColor}" style="width:${fillPct}%"></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-center text-xs mb-3">
+        <div class="bg-slate-800 rounded-lg p-2">
+          <p class="text-slate-400">Health</p>
+          <p class="font-bold ${scoreColor}">${health}</p>
+        </div>
+        <div class="bg-slate-800 rounded-lg p-2">
+          <p class="text-slate-400">Depth</p>
+          <p class="font-bold text-white">${depth}mm</p>
+        </div>
+        <div class="bg-slate-800 rounded-lg p-2">
+          <p class="text-slate-400">Battery</p>
+          <p class="font-bold text-white">${battery !== null ? battery + '%' : '—'}</p>
+        </div>
+      </div>
+      <div class="text-xs ${riskBannerColor} rounded px-2 py-1.5 mb-2">
+        <strong>${riskText}</strong>
+      </div>
+      ${node.isBlocked ? '<div class="text-xs bg-amber-900/40 text-amber-300 rounded px-2 py-1 mb-1">&#9888; Siltation Index Detected</div>' : ''}
+      ${node.isTampered ? '<div class="text-xs bg-red-900/40 text-red-300 rounded px-2 py-1 mb-1">&#128680; Tamper Alert</div>' : ''}
+    `;
+  }
+
+  function updateNodeCard(data) {
+    const card = document.getElementById(`card-${data.nodeId}`);
+    if (!card) return;
+    card.innerHTML = renderCardInner(
+      { ...data, emptyDistanceMm: data.emptyDistanceMm || 1800 },
+      data.waterDepth,
+      data.drainHealthScore
+    );
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 500);
+  }
+
+  function countImpending() {
+    return Object.values(predictiveRisk).filter(r => r && r.riskStatus === 'CRITICAL_IMPENDING').length;
+  }
+
+  function countElevated() {
+    return Object.values(predictiveRisk).filter(r => r && r.riskStatus === 'ELEVATED').length;
+  }
+
+  function updateStats() {
+    const nodes = Object.values(nodeData);
+    document.getElementById('stat-total').textContent = nodes.length;
+
+    const scores = nodes.map(n => n.drainHealthScore || 100);
+    const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 100;
+    document.getElementById('stat-health').textContent = avgScore;
+
+    const alertCount = countImpending() + countElevated();
+    document.getElementById('stat-alerts').textContent = alertCount;
+  }
+
+  function buildTicketEl(ticket) {
+    const div = document.createElement('div');
+    const sevColor = ticket.severity === 'Critical' ? 'border-red-500 bg-red-900/20' : ticket.severity === 'Medium' ? 'border-amber-500 bg-amber-900/20' : 'border-slate-600 bg-slate-800';
+    div.className = `rounded-lg px-3 py-2 border ${sevColor} text-xs`;
+    div.innerHTML = `
+      <div class="flex justify-between items-center">
+        <span class="font-bold text-white">${ticket.ticketId}</span>
+        <span class="text-slate-400">${ticket.status}</span>
+      </div>
+      <div class="text-slate-300 mt-0.5">${ticket.locationName}</div>
+      <div class="flex gap-2 mt-1">
+        <span class="text-slate-500">${ticket.severity}</span>
+        <span class="text-slate-500">${new Date(ticket.createdAt).toLocaleTimeString()}</span>
+      </div>
+    `;
+    return div;
+  }
+
+  function prependTicket(ticket) {
+    const list = document.getElementById('ticket-list');
+    const placeholder = list.querySelector('.text-slate-500');
+    if (placeholder) list.innerHTML = '';
+    list.insertBefore(buildTicketEl(ticket), list.firstChild);
+  }
+
+  function logEvent(msg) {
+    const log = document.getElementById('event-log');
+    const row = document.createElement('div');
+    const time = new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Nairobi', hour12: false }) + ' EAT';
+    row.className = 'border-b border-slate-700/50 pb-1';
+    row.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
+    if (log.firstChild && log.firstChild.textContent === 'Waiting for events...') log.innerHTML = '';
+    log.insertBefore(row, log.firstChild);
+    if (log.children.length > 20) log.removeChild(log.lastChild);
+  }
+
+  let alertAudio = null;
+  let audioEnabled = false;
+
+  function enableAudio() {
+    audioEnabled = !audioEnabled;
+    const btn = document.getElementById('audio-toggle');
+    const icon = document.getElementById('audio-toggle-icon');
+    const text = document.getElementById('audio-toggle-text');
+    if (audioEnabled) {
+      alertAudio = new Audio('/assets/notification.wav');
+      alertAudio.load();
+      alertAudio.play().catch(() => {});
+      if (window.speechSynthesis) {
+        const unlock = new SpeechSynthesisUtterance('Audio alerts enabled.');
+        unlock.rate = 1.05;
+        unlock.pitch = 0.9;
+        window.speechSynthesis.speak(unlock);
+      }
+      btn.classList.replace('bg-slate-800', 'bg-emerald-800');
+      btn.classList.replace('hover:bg-slate-700', 'hover:bg-emerald-700');
+      icon.innerHTML = '&#128266;';
+      text.textContent = 'Audio On';
+    } else {
+      if (alertAudio) { alertAudio.pause(); alertAudio = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      btn.classList.replace('bg-emerald-800', 'bg-slate-800');
+      btn.classList.replace('hover:bg-emerald-700', 'hover:bg-slate-700');
+      icon.innerHTML = '&#128263;';
+      text.textContent = 'Enable Audio Alerts';
+    }
+  }
+
+  function playAlertSound() {
+    if (!audioEnabled || !alertAudio) return;
+    alertAudio.currentTime = 0;
+    alertAudio.play().catch(() => {});
+  }
+
+  function speakAlert(text) {
+    if (!audioEnabled || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.05;
+    utterance.pitch = 0.9;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function showDispatchAlert(ticketId, location, priority) {
+    const container = document.getElementById('dispatch-toast');
+    const isUrgent = priority === 'Critical' || priority === 'High';
+    const wrapper = document.createElement('div');
+    wrapper.className = `toast-card pointer-events-auto w-full rounded-xl border p-4 shadow-lg ${isUrgent ? 'bg-red-950/90 border-red-500/60 shadow-red-900/40' : 'bg-slate-900/95 border-slate-600'}`;
+    wrapper.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="text-2xl leading-none">${isUrgent ? '&#128680;' : '&#128226;'}</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-bold uppercase tracking-wider ${isUrgent ? 'text-red-300' : 'text-slate-400'}">New Field Operation</p>
+          <p class="text-sm font-semibold text-white truncate">${ticketId} - ${location}</p>
+          <p class="text-xs text-slate-400 mt-0.5">Priority: <span class="${isUrgent ? 'text-red-300' : 'text-emerald-300'}">${priority}</span></p>
+        </div>
+      </div>
+    `;
+    container.appendChild(wrapper);
+    requestAnimationFrame(() => wrapper.classList.add('show'));
+    setTimeout(() => {
+      wrapper.classList.remove('show');
+      setTimeout(() => wrapper.remove(), 450);
+    }, 5000);
+  }
+
+  async function loadChart(nodeId) {
+    if (!nodeId) return;
+    chartNodeId = nodeId;
+    chartLabels.length = 0;
+    chartValues.length = 0;
+
+    const records = await fetch(`/api/v1/telemetry/${nodeId}`).then(r => r.json());
+    records.forEach(r => {
+      chartLabels.push(new Date(r.timestamp).toLocaleTimeString());
+      chartValues.push(r.waterDepth);
+    });
+
+    if (chart) { chart.destroy(); }
+    const ctx = document.getElementById('waterChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: chartLabels,
+        datasets: [{
+          label: `Water Depth (mm) — ${nodeId}`,
+          data: chartValues,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.1)',
+          borderWidth: 2,
+          pointRadius: 2,
+          tension: 0.3,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        animation: false,
+        scales: {
+          x: { ticks: { color: '#64748b', maxTicksLimit: 8 }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, title: { display: true, text: 'mm', color: '#64748b' } }
+        },
+        plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } }
+      }
+    });
+  }
+
+  function appendChartPoint(data) {
+    if (!chart) return;
+    if (chartLabels.length > 50) { chartLabels.shift(); chartValues.shift(); }
+    chartLabels.push(new Date(data.timestamp).toLocaleTimeString());
+    chartValues.push(data.waterDepth);
+    chart.update('none');
+  }
+
+  async function triggerSim(scenario) {
+    document.getElementById('sim-status').textContent = `Running: ${scenario}`;
+    await fetch('/api/v1/simulator/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario, interval: 4000 })
+    });
+    logEvent(`&#9881; Simulator started: ${scenario}`);
+  }
+
+  async function stopSim() {
+    await fetch('/api/v1/simulator/stop', { method: 'POST' });
+    document.getElementById('sim-status').textContent = 'Stopped';
+    logEvent('&#9632; Simulator stopped');
+  }
+
+  init();
+</script>
+  <div id="dispatchModal" class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div class="bg-slate-800 border-b border-slate-700 px-6 py-4">
+        <h3 class="text-lg font-bold text-white">Dispatch Remediation Asset</h3>
+        <p class="text-xs text-slate-400 mt-1">Assign a specific crew based on the current siltation diagnostic.</p>
+      </div>
+      <div class="p-6 space-y-4">
+        <div>
+          <p class="text-xs text-slate-500 uppercase tracking-wide">Ticket ID</p>
+          <p id="modalTicketId" class="text-sm font-mono text-slate-200 font-semibold">—</p>
+        </div>
+        <div>
+          <p class="text-xs text-slate-500 uppercase tracking-wide">Diagnostic</p>
+          <p id="modalDiagnostic" class="text-sm text-slate-300 leading-relaxed">—</p>
+        </div>
+        <div>
+          <label for="crewSelect" class="block text-xs text-slate-400 mb-2">Select Crew</label>
+          <select id="crewSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600">
+            <option value="" disabled selected>Loading crews...</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-3 px-6 py-4 bg-slate-800/50 border-t border-slate-700">
+        <button onclick="closeDispatchModal()" class="px-4 py-2 rounded-lg text-slate-300 text-xs font-semibold hover:bg-slate-800 transition">Cancel</button>
+        <button onclick="finalizeDispatch()" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition">Finalize Dispatch</button>
+      </div>
+    </div>
+  </div>
+  <div id="crewAdminModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-white">Crew &amp; Unit Management</h3>
+          <p class="text-xs text-slate-400">Register field units and review rosters</p>
+        </div>
+        <button type="button" onclick="closeCrewAdminModal()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+      </div>
+      <div class="p-6 overflow-y-auto space-y-6">
+        <form onsubmit="event.preventDefault(); addCrew();" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input id="adminCrewName" type="text" placeholder="Crew / Unit name" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600" />
+          <input id="adminCrewLogin" type="text" placeholder="Login ID (tablet)" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600" />
+          <input id="adminLeaderName" type="text" placeholder="Leader full name" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600" />
+          <input id="adminLeaderPassword" type="text" placeholder="Leader password" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600" />
+          <div class="sm:col-span-2 text-right">
+            <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold">+ Add New Unit</button>
+          </div>
+        </form>
+        <div id="adminCrewList" class="space-y-3">
+          <div class="text-slate-500 text-xs">Loading crews...</div>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-3 px-6 py-4 bg-slate-800/50 border-t border-slate-700">
+        <button type="button" onclick="closeCrewAdminModal()" class="px-4 py-2 rounded-lg text-slate-300 text-xs font-semibold hover:bg-slate-800 transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="proofModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden">
+      <div class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-white">Proof of Work</h3>
+          <p class="text-xs text-slate-400"><span id="proofTicketId" class="font-mono">—</span> · <span id="proofLocation">—</span></p>
+        </div>
+        <button onclick="closeProofModal()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="text-sm text-slate-300">Resolved by: <span id="proofResolvedBy" class="font-semibold text-white">—</span></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="space-y-2">
+            <p class="text-xs text-slate-500 uppercase tracking-wide">Before</p>
+            <img id="proofBefore" src="" class="w-full rounded-lg border border-slate-700 hidden" />
+            <p id="proofBeforePlaceholder" class="text-xs text-slate-500 border border-slate-700 rounded-lg p-4 text-center">No before photo</p>
+          </div>
+          <div class="space-y-2">
+            <p class="text-xs text-slate-500 uppercase tracking-wide">After</p>
+            <img id="proofAfter" src="" class="w-full rounded-lg border border-slate-700 hidden" />
+            <p id="proofAfterPlaceholder" class="text-xs text-slate-500 border border-slate-700 rounded-lg p-4 text-center">No after photo</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-3 px-6 py-4 bg-slate-800/50 border-t border-slate-700">
+        <button onclick="closeProofModal()" class="px-4 py-2 rounded-lg text-slate-300 text-xs font-semibold hover:bg-slate-800 transition">Close</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

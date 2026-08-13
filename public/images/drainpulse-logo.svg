@@ -1,0 +1,19 @@
+<svg width="650" height="150" viewBox="0 0 650 150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Water Pulse Icon -->
+  <g transform="translate(40, 25)">
+    <!-- Water Drop Shape -->
+    <path d="M50 0 C77.6 0 100 22.4 100 50 C100 80 50 150 50 150 C50 150 0 80 0 50 C0 22.4 22.4 0 50 0 Z" fill="#005A9C"/>
+    <!-- Pulse Wave inside Drop -->
+    <path d="M20 60 L35 60 L45 30 L55 90 L65 60 L80 60" stroke="#FFFFFF" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- Text: DRAINPULSE -->
+  <text x="160" y="95" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#333333">
+    DRAINPULSE
+  </text>
+  
+  <!-- Sub-text: Infrastructure Intelligence -->
+  <text x="160" y="125" font-family="Arial, sans-serif" font-size="16" letter-spacing="1" fill="#666666">
+    INFRASTRUCTURE INTELLIGENCE
+  </text>
+</svg>
