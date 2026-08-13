@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+const { Readable } = require('stream');
 const fs = require('fs');
 const path = require('path');
 const MaintenanceTicket = require('../models/MaintenanceTicket');
@@ -9,7 +11,36 @@ const DrainNode = require('../models/DrainNode');
 const UPLOAD_DIR = path.join(__dirname, '../../public/uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const storage = multer.diskStorage({
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
+const useCloudinary = !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET);
+
+if (useCloudinary) {
+  cloudinary.config({
+    cloud_name: CLOUDINARY_CLOUD_NAME,
+    api_key: CLOUDINARY_API_KEY,
+    api_secret: CLOUDINARY_API_SECRET
+  });
+  console.log('[CLOUDINARY] Configured for production uploads');
+} else {
+  console.log('[CLOUDINARY] Environment not found; falling back to local disk uploads');
+}
+
+function uploadToCloudinary(file) {
+  return new Promise((resolve, reject) => {
+    const cldStream = cloudinary.uploader.upload_stream(
+      { resource_type: 'image' },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result.secure_url);
+      }
+    );
+    Readable.from(file.buffer).pipe(cldStream);
+  });
+}
+
+const diskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     cb(null, UPLOAD_DIR);
@@ -21,7 +52,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage,
+  storage: useCloudinary ? multer.memoryStorage() : diskStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
@@ -82,10 +113,16 @@ router.patch('/:ticketId/resolve', resolveUpload, async (req, res) => {
     const set = { status: 'Resolved', resolvedAt: new Date(), resolutionNotes: resolutionNotes || '' };
     const beforeFile = req.files?.beforePhoto?.[0];
     const afterFile = req.files?.afterPhoto?.[0];
-    if (beforeFile) set.beforePhotoUrl = '/uploads/' + beforeFile.filename;
-    else if (req.body.beforePhotoUrl) set.beforePhotoUrl = req.body.beforePhotoUrl;
-    if (afterFile) set.afterPhotoUrl = '/uploads/' + afterFile.filename;
-    else if (req.body.afterPhotoUrl) set.afterPhotoUrl = req.body.afterPhotoUrl;
+    if (beforeFile) {
+      set.beforePhotoUrl = useCloudinary ? await uploadToCloudinary(beforeFile) : '/uploads/' + beforeFile.filename;
+    } else if (req.body.beforePhotoUrl) {
+      set.beforePhotoUrl = req.body.beforePhotoUrl;
+    }
+    if (afterFile) {
+      set.afterPhotoUrl = useCloudinary ? await uploadToCloudinary(afterFile) : '/uploads/' + afterFile.filename;
+    } else if (req.body.afterPhotoUrl) {
+      set.afterPhotoUrl = req.body.afterPhotoUrl;
+    }
     if (memberId || memberName) {
       set['actionAudit.resolvedByMemberId'] = memberId || '';
       set['actionAudit.resolvedByMemberName'] = memberName || '';
