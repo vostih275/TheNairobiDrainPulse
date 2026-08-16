@@ -12,7 +12,12 @@ const CrewSchema = new mongoose.Schema({
   loginIdentifier: { type: String, required: true, unique: true },
   leaderPassword: { type: String, required: true },
   sharedPassword: { type: String, default: null },
-  members: [CrewMemberSchema]
+  members: [CrewMemberSchema],
+  reliabilityScore: { type: Number, default: 100, min: 0, max: 100 },
+  avgResolutionMinutes: { type: Number, default: 0 },
+  proofCompliance: { type: Number, default: 100, min: 0, max: 100 },
+  resolvedTicketsCount: { type: Number, default: 0 },
+  lastScoredAt: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('Crew', CrewSchema);

@@ -180,6 +180,9 @@ router.patch('/:ticketId/resolve', resolveUpload, async (req, res) => {
       { new: true }
     );
     if (!ticket) return res.status(404).json({ error: 'Ticket not found or already resolved' });
+    if (ticket.assignedCrew) {
+      updateCrewScores(ticket.assignedCrew).catch(err => console.warn('[CREW SCORE] update failed:', err.message));
+    }
     req.app.get('io').emit('ticket_resolved', ticket);
     res.json({ success: true, ticket });
   } catch (err) {

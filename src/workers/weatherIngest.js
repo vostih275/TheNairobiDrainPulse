@@ -2,6 +2,8 @@ const axios = require('axios');
 const cron = require('node-cron');
 const DrainNode = require('../models/DrainNode');
 const WeatherReading = require('../models/WeatherReading');
+const WeatherForecast = require('../models/WeatherForecast');
+const { generateInspectionTickets } = require('../utils/inspectionTicketEngine');
 
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 
@@ -59,18 +61,63 @@ async function runWeatherJob() {
   console.log(`[WEATHER] Inserted ${results.length} readings at ${timestamp.toISOString()}:`, results.map(r => `${r.subCounty}=${r.rate}mm/hr`).join(', '));
 }
 
+async function fetchForecastForSubCounty(subCounty) {
+  try {
+    const node = await DrainNode.findOne({ subCounty }).lean();
+    if (!node) return null;
+    const [longitude, latitude] = node.location.coordinates;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=precipitation_sum,temperature_2m_max,windspeed_10m_max&timezone=Africa%2FNairobi&forecast_days=7`;
+    const res = await axios.get(url, { timeout: 15000 });
+    const daily = res.data.daily;
+    const today = new Date().toISOString().slice(0, 10);
+    const days = [];
+    for (let i = 0; i < daily.time.length; i++) {
+      days.push({
+        date: daily.time[i],
+        precipitationMm: Number(daily.precipitation_sum[i]) || 0,
+        maxTempC: Number(daily.temperature_2m_max[i]) || null,
+        windSpeedKmh: Number(daily.windspeed_10m_max[i]) || null
+      });
+    }
+    return await WeatherForecast.create({
+      subCounty,
+      source: 'open-meteo',
+      forecastFor: today,
+      days
+    });
+  } catch (err) {
+    console.error(`[WEATHER FORECAST] Failed for ${subCounty}:`, err.message);
+    return null;
+  }
+}
+
+async function runForecastJob() {
+  const subCounties = await DrainNode.distinct('subCounty');
+  if (!subCounties.length) return;
+
+  await Promise.all(subCounties.map(fetchForecastForSubCounty));
+  console.log(`[WEATHER FORECAST] Fetched 7-day forecast for ${subCounties.length} sub-county(ies)`);
+
+  await generateInspectionTickets();
+}
+
 function startWeatherWorker() {
-  if (!cron.validate('*/15 * * * *')) {
+  if (!cron.validate('*/15 * * * *') || !cron.validate('0 6 * * *')) {
     console.error('[WEATHER] Invalid cron schedule');
     return;
   }
 
   // Run immediately on boot, then every 15 minutes
   runWeatherJob().catch(err => console.error('[WEATHER] Initial job failed:', err.message));
+  runForecastJob().catch(err => console.error('[WEATHER] Initial forecast job failed:', err.message));
   cron.schedule('*/15 * * * *', () => {
     runWeatherJob().catch(err => console.error('[WEATHER] Cron job failed:', err.message));
   });
-  console.log('[WEATHER] Worker scheduled every 15 minutes');
+  // Forecast refresh + inspection ticket generation at 06:00 daily
+  cron.schedule('0 6 * * *', () => {
+    runForecastJob().catch(err => console.error('[WEATHER] Forecast job failed:', err.message));
+  });
+  console.log('[WEATHER] Worker scheduled every 15 minutes; forecast refresh at 06:00');
 }
 
-module.exports = { startWeatherWorker, runWeatherJob };
+module.exports = { startWeatherWorker, runWeatherJob, runForecastJob };

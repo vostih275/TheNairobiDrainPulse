@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Crew = require('../models/Crew');
+const { computeLeaderboard, updateCrewScores } = require('../utils/crewScorer');
 
 function sanitizeCrew(crew) {
   return {
@@ -126,6 +127,26 @@ router.delete('/:id/members/:memberId', async (req, res) => {
     }
     await crew.save();
     res.json({ success: true, crew: sanitizeCrew(crew) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/leaderboard', async (req, res) => {
+  try {
+    const leaderboard = await computeLeaderboard();
+    res.json(leaderboard);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/rescore', async (req, res) => {
+  try {
+    const crew = await Crew.findById(req.params.id);
+    if (!crew) return res.status(404).json({ success: false, error: 'Crew not found' });
+    const updated = await updateCrewScores(crew.crewName);
+    res.json({ success: true, crew: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

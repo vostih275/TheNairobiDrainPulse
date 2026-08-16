@@ -350,6 +350,45 @@
     marker.setPopupContent(getPopupContent(data, data));
   }
 
+  function openLeaderboardModal() {
+    document.getElementById('leaderboardModal').classList.remove('hidden');
+    loadLeaderboard();
+  }
+
+  function closeLeaderboardModal() {
+    document.getElementById('leaderboardModal').classList.add('hidden');
+  }
+
+  async function loadLeaderboard() {
+    const list = document.getElementById('leaderboardList');
+    list.innerHTML = '<div class="text-slate-500 text-xs">Loading leaderboard...</div>';
+    try {
+      const crews = await fetch('/api/v1/crews/leaderboard').then(r => r.json());
+      if (!crews.length) {
+        list.innerHTML = '<div class="text-slate-500 text-xs">No contractors scored yet.</div>';
+        return;
+      }
+      list.innerHTML = crews.map((c, i) => `
+        <div class="bg-slate-950 border border-slate-700 rounded-xl p-4 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="text-xl font-black ${i < 3 ? 'text-emerald-400' : 'text-slate-500'}">#${i + 1}</div>
+            <div>
+              <div class="text-white font-semibold text-sm">${c.crewName}</div>
+              <div class="text-xs text-slate-400">${c.resolvedTicketsCount || 0} resolved · ${Math.round(c.avgResolutionMinutes || 0)} min avg · ${c.proofCompliance || 0}% proof</div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-2xl font-bold ${(c.reliabilityScore || 0) >= 80 ? 'text-emerald-400' : (c.reliabilityScore || 0) >= 50 ? 'text-amber-400' : 'text-red-400'}">${c.reliabilityScore || 0}</div>
+            <div class="text-[10px] text-slate-500 uppercase">Reliability</div>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      console.error('[LEADERBOARD] Failed to load', e);
+      list.innerHTML = '<div class="text-red-400 text-xs">Failed to load leaderboard.</div>';
+    }
+  }
+
   async function init() {
     initMap();
     await loadCrews();
@@ -1175,7 +1214,10 @@ async function openDispatchModal(ticketId) {
           <h3 class="text-lg font-bold text-white">Crew &amp; Unit Management</h3>
           <p class="text-xs text-slate-400">Register field units and review rosters</p>
         </div>
-        <button type="button" onclick="closeCrewAdminModal()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="openLeaderboardModal()" class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold">Reliability Leaderboard</button>
+          <button type="button" onclick="closeCrewAdminModal()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
       </div>
       <div class="p-6 overflow-y-auto space-y-6">
         <form onsubmit="event.preventDefault(); addCrew();" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1193,6 +1235,21 @@ async function openDispatchModal(ticketId) {
       </div>
       <div class="flex items-center justify-end gap-3 px-6 py-4 bg-slate-800/50 border-t border-slate-700">
         <button type="button" onclick="closeCrewAdminModal()" class="px-4 py-2 rounded-lg text-slate-300 text-xs font-semibold hover:bg-slate-800 transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="leaderboardModal" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-white">Contractor Reliability Leaderboard</h3>
+          <p class="text-xs text-slate-400">Ranked by resolution time and visual proof compliance</p>
+        </div>
+        <button type="button" onclick="closeLeaderboardModal()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+      </div>
+      <div class="p-6 overflow-y-auto">
+        <div id="leaderboardList" class="space-y-3">Loading...</div>
       </div>
     </div>
   </div>

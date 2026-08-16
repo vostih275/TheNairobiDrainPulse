@@ -22,6 +22,7 @@ const MaintenanceTicketSchema = new mongoose.Schema({
   blockageType: { type: String },
   requiredTools: [{ type: String }],
   assignedVehicle: { type: String },
+  forecastDate: { type: String },
   equipmentManifest: {
     selected: { type: Object },
     bypassed: [{ type: Object }]
