@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const MaintenanceTicket = require('../models/MaintenanceTicket');
 const DrainNode = require('../models/DrainNode');
+const { findEquipmentManifest, dispatchByTicketId } = require('../services/assetMatcher');
 
 const UPLOAD_DIR = path.join(__dirname, '../../public/uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -109,8 +110,27 @@ router.get('/active', async (req, res) => {
   }
 });
 
+router.get('/:ticketId/manifest', async (req, res) => {
+  try {
+    const ticket = await MaintenanceTicket.findOne({ ticketId: req.params.ticketId }).lean();
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const node = await DrainNode.findOne({ nodeId: ticket.nodeId }).lean();
+    if (!node) return res.status(404).json({ error: 'Node not found' });
+    const manifest = await findEquipmentManifest(node.location, ticket.blockageType);
+    res.json({ success: true, ticketId: ticket.ticketId, ...manifest });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/:ticketId/dispatch', async (req, res) => {
   try {
+    if (req.body.auto) {
+      const { ticket } = await dispatchByTicketId(req.params.ticketId);
+      req.app.get('io').emit('ticket_dispatched', ticket);
+      return res.json({ success: true, ticket });
+    }
+
     const assignedCrew = req.body.assignedCrew || 'Unit 4 - Vacuum Truck';
     const ticket = await MaintenanceTicket.findOneAndUpdate(
       { ticketId: req.params.ticketId, status: { $ne: 'Resolved' } },

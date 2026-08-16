@@ -588,7 +588,7 @@
                 <span class="text-xs text-slate-400">${t.ticketId}</span>
               </div>
               <div class="text-sm font-semibold mt-1 truncate">${t.locationName}</div>
-              <div class="text-xs text-slate-400 truncate">Node: ${t.nodeId} · Crew: ${t.assignedCrew || '—'}</div>
+              <div class="text-xs text-slate-400 truncate">Node: ${t.nodeId} · Crew: ${t.assignedCrew || '—'} · Vehicle: ${t.assignedVehicle || '—'} · ${t.blockageType ? t.blockageType.replace(/_/g, ' ') : 'unclassified'}</div>
               <div class="text-xs ${t.diagnosticSummary?.includes('Severe') || t.diagnosticSummary?.includes('Critical') ? 'text-amber-300' : 'text-slate-500'} truncate">${t.diagnosticSummary || t.notes || 'No diagnostic available.'}</div>
             </div>
             <div class="flex flex-wrap gap-2 w-full sm:w-auto">
@@ -695,19 +695,55 @@
     }
   }
 
-function openDispatchModal(ticketId) {
+async function openDispatchModal(ticketId) {
     const ticket = window.fieldOpsTickets?.find(t => t.ticketId === ticketId);
     if (!ticket) return;
     currentDispatchTicketId = ticketId;
     document.getElementById('modalTicketId').textContent = ticket.ticketId;
     document.getElementById('modalDiagnostic').textContent = ticket.diagnosticSummary || ticket.notes || 'No diagnostic available.';
+    document.getElementById('modalBlockageType').textContent = ticket.blockageType ? ticket.blockageType.replace(/_/g, ' ') : 'analyzing...';
+    document.getElementById('modalRequiredTools').textContent = ticket.requiredTools?.join(', ').replace(/_/g, ' ') || '—';
 
-    const crewSelect = document.getElementById('crewSelect');
-    crewSelect.innerHTML = crewsCache.map(c => `<option value="${c.crewName}">${c.crewName}</option>`).join('');
-    const defaultCrew = crewsCache.find(c => c.crewName === 'Unit 4 - Vacuum/Jetting Combo') || crewsCache[0];
-    if (defaultCrew) crewSelect.value = defaultCrew.crewName;
-
+    const manifestPanel = document.getElementById('modalManifest');
+    manifestPanel.innerHTML = '<div class="text-slate-500 text-xs">Loading equipment manifest...</div>';
     document.getElementById('dispatchModal').classList.remove('hidden');
+
+    try {
+      const manifest = await fetch(`/api/v1/tickets/${ticketId}/manifest`).then(r => r.json());
+      if (!manifest.success) {
+        manifestPanel.innerHTML = `<div class="text-red-400 text-xs">${manifest.error || 'Could not load manifest'}</div>`;
+        return;
+      }
+      const selected = manifest.selected;
+      const selectedHtml = selected
+        ? `<div class="bg-emerald-900/40 border border-emerald-700 rounded-lg p-3 mb-2">
+             <div class="text-emerald-300 text-xs font-bold uppercase mb-1">Selected</div>
+             <div class="text-white text-sm font-semibold">${selected.callSign} · ${selected.crewName}</div>
+             <div class="text-slate-400 text-xs">${Math.round(selected.distanceMeters)} m away · ${selected.type}</div>
+             <div class="text-emerald-200 text-[10px] mt-1">100% tool match</div>
+           </div>`
+        : `<div class="bg-red-900/40 border border-red-700 rounded-lg p-3 mb-2">
+             <div class="text-red-300 text-xs font-bold uppercase mb-1">No Match</div>
+             <div class="text-slate-300 text-xs">No active vehicle has all required tools.</div>
+           </div>`;
+
+      const bypassedHtml = (manifest.bypassed || []).length
+        ? `<div class="text-slate-400 text-xs font-semibold uppercase mb-1">Bypassed Trucks</div>` +
+          manifest.bypassed.map(v => `
+            <div class="bg-slate-800 border border-slate-700 rounded p-2 mb-1">
+              <div class="flex justify-between">
+                <span class="text-slate-200 text-xs font-semibold">${v.callSign}</span>
+                <span class="text-slate-500 text-[10px]">${Math.round(v.distanceMeters)} m</span>
+              </div>
+              <div class="text-red-300 text-[10px]">${v.bypassReason}</div>
+            </div>
+          `).join('')
+        : '';
+
+      manifestPanel.innerHTML = selectedHtml + bypassedHtml;
+    } catch (e) {
+      manifestPanel.innerHTML = '<div class="text-red-400 text-xs">Failed to load manifest.</div>';
+    }
   }
 
   function closeDispatchModal() {
@@ -717,12 +753,11 @@ function openDispatchModal(ticketId) {
 
   async function finalizeDispatch() {
     if (!currentDispatchTicketId) return;
-    const assignedCrew = document.getElementById('crewSelect').value;
     try {
       const res = await fetch(`/api/v1/tickets/${currentDispatchTicketId}/dispatch`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignedCrew })
+        body: JSON.stringify({ auto: true })
       });
       const data = await res.json();
       if (res.ok) {
@@ -1112,11 +1147,19 @@ function openDispatchModal(ticketId) {
           <p class="text-xs text-slate-500 uppercase tracking-wide">Diagnostic</p>
           <p id="modalDiagnostic" class="text-sm text-slate-300 leading-relaxed">—</p>
         </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <p class="text-xs text-slate-500 uppercase tracking-wide">Blockage Type</p>
+            <p id="modalBlockageType" class="text-sm text-slate-200 font-semibold">—</p>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 uppercase tracking-wide">Required Tools</p>
+            <p id="modalRequiredTools" class="text-sm text-slate-200">—</p>
+          </div>
+        </div>
         <div>
-          <label for="crewSelect" class="block text-xs text-slate-400 mb-2">Select Crew</label>
-          <select id="crewSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600">
-            <option value="" disabled selected>Loading crews...</option>
-          </select>
+          <p class="text-xs text-slate-500 uppercase tracking-wide mb-2">Equipment Manifest</p>
+          <div id="modalManifest" class="max-h-64 overflow-y-auto space-y-2">Loading...</div>
         </div>
       </div>
       <div class="flex items-center justify-end gap-3 px-6 py-4 bg-slate-800/50 border-t border-slate-700">

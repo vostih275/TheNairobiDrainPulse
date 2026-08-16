@@ -8,6 +8,8 @@ const Telemetry = require('../models/Telemetry');
 const MaintenanceTicket = require('../models/MaintenanceTicket');
 const { predictRisk } = require('../lib/predictiveEngine');
 const { generateDiagnosticSummary } = require('../utils/diagnosticEngine');
+const { classifyBlockage } = require('../utils/blockageClassifier');
+const { dispatchByTicketId } = require('../services/assetMatcher');
 
 const NODES = [
   { nodeId: 'NODE-001', locationName: 'South C - Muhoho Ave Junction', latitude: -1.3133, longitude: 36.8290, emptyDistanceMm: 1800 },
@@ -155,16 +157,33 @@ async function runSimulatorTick(io, scenario) {
             waterLevel: fillLevel,
             locationName: node.locationName
           });
-          const ticket = await MaintenanceTicket.create({
+          const classification = classifyBlockage({
+            flowSpeed: decoded.flowSpeed,
+            siltation,
+            waterLevel: fillLevel,
+            rainfallRate: prediction.rainfallRateMmHr,
+            isBlocked: decoded.isBlocked
+          });
+          let ticket = await MaintenanceTicket.create({
             ticketId: `TKT-${uuidv4().slice(0, 8).toUpperCase()}`,
             nodeId: nodeDef.nodeId,
             locationName: node.locationName,
             severity,
             diagnostic: `Siltation ${siltation}% | Rain ${prediction.rainfallRateMmHr} mm/hr | Flow ${decoded.flowSpeed} cm/s | Depth ${waterDepth} mm`,
             diagnosticSummary,
+            blockageType: classification.blockageType,
+            requiredTools: classification.requiredTools,
             status: 'Pending'
           });
-          io.emit('new_ticket', ticket);
+          try {
+            const { ticket: dispatched, selected } = await dispatchByTicketId(ticket.ticketId);
+            ticket = dispatched;
+            io.emit('new_ticket', ticket);
+            if (selected) io.emit('ticket_dispatched', ticket);
+          } catch (dispatchErr) {
+            io.emit('new_ticket', ticket);
+            console.warn('[DISPATCH] Auto-dispatch failed:', dispatchErr.message);
+          }
           console.log(`[ALERT] SMS Broadcast => ${nodeDef.nodeId} | ${node.locationName} | Score: ${score} | ${severity} | ${ticket.ticketId}`);
         }
       }

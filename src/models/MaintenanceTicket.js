@@ -19,6 +19,13 @@ const MaintenanceTicketSchema = new mongoose.Schema({
     before: [{ type: String }],
     after: [{ type: String }]
   },
+  blockageType: { type: String },
+  requiredTools: [{ type: String }],
+  assignedVehicle: { type: String },
+  equipmentManifest: {
+    selected: { type: Object },
+    bypassed: [{ type: Object }]
+  },
   actionAudit: {
     resolvedByMemberId: { type: String },
     resolvedByMemberName: { type: String }
