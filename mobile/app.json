@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "DrainPulse Field",
+    "slug": "drainpulse-field",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.drainpulse.field"
+    },
+    "android": {
+      "package": "com.drainpulse.field"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow DrainPulse to verify your proximity to drainage nodes in the background."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow DrainPulse to attach remediation photos to tickets."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBase": "http://YOUR_MACHINE_IP:3000"
+    }
+  }
+}

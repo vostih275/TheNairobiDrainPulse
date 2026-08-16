@@ -167,4 +167,32 @@ router.patch('/:ticketId/resolve', resolveUpload, async (req, res) => {
   }
 });
 
+router.patch('/:ticketId/photos', resolveUpload, async (req, res) => {
+  try {
+    const beforeFiles = (req.files && req.files['beforePhotos']) || [];
+    const afterFiles = (req.files && req.files['afterPhotos']) || [];
+
+    const uploadUrls = async (files) =>
+      Promise.all(files.map(file =>
+        useCloudinary ? uploadToCloudinary(file) : '/uploads/' + file.filename
+      ));
+
+    const beforeUrls = beforeFiles.length ? await uploadUrls(beforeFiles) : [];
+    const afterUrls = afterFiles.length ? await uploadUrls(afterFiles) : [];
+
+    const ticket = await MaintenanceTicket.findOne({ ticketId: req.params.ticketId });
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    const existing = ticket.photoUrls || { before: [], after: [] };
+    ticket.photoUrls = {
+      before: [...(existing.before || []), ...beforeUrls],
+      after: [...(existing.after || []), ...afterUrls]
+    };
+    await ticket.save();
+    res.json({ success: true, ticket });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
