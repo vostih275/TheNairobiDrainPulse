@@ -22,6 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Network from 'expo-network';
 import * as TaskManager from 'expo-task-manager';
+import ScannerScreen from './ScannerScreen';
 
 const API_BASE =
   Constants.expoConfig?.extra?.apiBase ||
@@ -208,6 +209,7 @@ export default function App() {
   const [beforeUris, setBeforeUris] = useState([]);
   const [afterUris, setAfterUris] = useState([]);
   const [resolutionNotes, setResolutionNotes] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState('');
 
   const locationSubscription = useRef(null);
@@ -606,6 +608,7 @@ export default function App() {
   }
 
   function renderTicket() {
+    if (showScanner) return <ScannerScreen onClose={() => setShowScanner(false)} />;
     if (loading && !activeTicket) return <ActivityIndicator size="large" color="#2563eb" />;
     if (!activeTicket) {
       return (
@@ -730,6 +733,8 @@ export default function App() {
               color="#16a34a"
               disabled={!canAct || afterUris.length === 0 || loading}
             />
+            <View style={{ height: 10 }} />
+            <Button title="Scan Parts / Assets" onPress={() => setShowScanner(true)} color="#7c3aed" />
             <View style={{ height: 10 }} />
             <Button title="Sync Now" onPress={handleManualSync} color="#64748b" />
             <View style={{ height: 10 }} />

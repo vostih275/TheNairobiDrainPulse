@@ -14,6 +14,7 @@ const httpServer = http.createServer(app);
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
 const { startWeatherWorker } = require('./workers/weatherIngest');
+const { startProcurementWorker } = require('./workers/procurementWorker');
 
 app.use(helmet({
   strictTransportSecurity: false,
@@ -42,6 +43,7 @@ mongoose.connect(DB_URI)
   .then(() => {
     console.log('[DB] Connected to MongoDB:', DB_URI);
     startWeatherWorker();
+    startProcurementWorker();
   })
   .catch(err => { console.error('[DB] Connection failed:', err.message); process.exit(1); });
 
@@ -54,6 +56,8 @@ const reportsRouter = require('./routes/reports');
 const telemetryRouter = require('./routes/telemetry');
 const ticketsRouter = require('./routes/tickets');
 const crewsRouter = require('./routes/crews');
+const inventoryRouter = require('./routes/inventory');
+const iotAssetsRouter = require('./routes/iotAssets');
 const simulatorRouter = require('./routes/simulator');
 
 app.use('/api/v1/ingest', ingestRouter);
@@ -61,6 +65,8 @@ app.use('/api/v1/nodes', nodesRouter);
 app.use('/api/v1/predictions', predictionsRouter);
 app.use('/api/v1/reports', reportsRouter);
 app.use('/api/v1/telemetry', telemetryRouter);
+app.use('/api/v1/inventory', inventoryRouter);
+app.use('/api/v1/iot-assets', iotAssetsRouter);
 app.use('/api/v1/tickets', ticketsRouter);
 app.use('/api/v1/crews', crewsRouter);
 app.use('/api/v1/simulator', simulatorRouter);

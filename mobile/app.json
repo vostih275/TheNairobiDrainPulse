@@ -25,6 +25,12 @@
         {
           "photosPermission": "Allow DrainPulse to attach remediation photos to tickets."
         }
+      ],
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Allow DrainPulse to scan barcodes and QR codes for parts and assets."
+        }
       ]
     ],
     "extra": {
